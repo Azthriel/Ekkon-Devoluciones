@@ -1,0 +1,54 @@
+rules_version = '2';
+
+// Reglas de Ekkon Devoluciones.
+// Copiar en Firebase > Firestore Database > Reglas > Publicar.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function logueado() {
+      return request.auth != null;
+    }
+    function perfil() {
+      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data;
+    }
+    function activo() {
+      return logueado()
+        && exists(/databases/$(database)/documents/usuarios/$(request.auth.uid))
+        && perfil().activo == true;
+    }
+    function admin() {
+      return activo() && perfil().rol == 'admin';
+    }
+    // Estados que el perfil de carga todavía puede tocar
+    function editableCarga(estado) {
+      return estado in ['cargada', 'reclamo_armado', 'sin_reclamo'];
+    }
+
+    match /usuarios/{uid} {
+      // Cada uno lee su propio perfil (para saber si está activo); el admin lee y modifica todos
+      allow read: if logueado() && (request.auth.uid == uid || admin());
+      allow write: if admin();
+    }
+
+    match /config/{doc} {
+      allow read: if activo();
+      allow write: if admin();
+    }
+
+    match /devoluciones/{venta} {
+      allow read: if activo();
+      allow create: if activo()
+        && request.resource.data.numero_venta == venta
+        && (admin() || editableCarga(request.resource.data.estado));
+      allow update: if admin()
+        || (activo() && editableCarga(resource.data.estado) && editableCarga(request.resource.data.estado));
+      allow delete: if admin();
+
+      match /fotos/{foto} {
+        allow read: if activo();
+        allow write: if admin()
+          || (activo() && editableCarga(get(/databases/$(database)/documents/devoluciones/$(venta)).data.estado));
+      }
+    }
+  }
+}
