@@ -31,6 +31,18 @@ Releases → `EkkonDevoluciones.exe`. Cada tag `vX.Y.Z` publica un release nuevo
    `activo` (boolean, true), `rol` (string, `admin`), `nombre` (string), `email` (string).
    Desde ahí, el resto de los usuarios se crea desde el programa.
 
+## Probar en Linux (Ubuntu)
+
+```bash
+git clone https://github.com/Azthriel/Ekkon-Devoluciones.git && cd Ekkon-Devoluciones
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python main.py
+```
+
+Si al abrir aparece un error de `libmpv.so.1`:
+`sudo apt install libmpv2 && sudo ln -s /usr/lib/x86_64-linux-gnu/libmpv.so.2 /usr/lib/x86_64-linux-gnu/libmpv.so.1`
+
 ## Desarrollo
 
 ```bash

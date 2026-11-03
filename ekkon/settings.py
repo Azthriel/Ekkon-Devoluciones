@@ -8,7 +8,7 @@ APP_NAME = "Ekkon Devoluciones"
 
 FIREBASE_PROJECT_ID = "ekkon-bf945"
 # Firebase > Configuración del proyecto > General > Tus apps > App web > apiKey
-FIREBASE_API_KEY = ""
+FIREBASE_API_KEY = "AIzaSyBE5V980bOknc4WJghz4W0b0tBCxfWzsiE"
 
 # Límite de caracteres que acepta Mercado Libre en el mensaje de reclamo
 LIMITE_MENSAJE = 320

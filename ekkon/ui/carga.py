@@ -53,7 +53,8 @@ class VistaCarga:
                                      helper_text="Copiarlo de \"Problema de la venta\" y los mensajes del comprador.")
         self.descripcion = ft.TextField(label="Estado en que llegó el producto *", multiline=True,
                                         min_lines=3, max_lines=6,
-                                        helper_text="Describir solo lo que se ve: golpes, faltantes, uso, suciedad, etc.")
+                                        helper_text="Describir solo lo que se ve: golpes, faltantes, uso, suciedad, etc.",
+                                        on_change=lambda _: self._actualizar_pasos())
         self.reclamo = ft.Switch(label="Corresponde reclamo a Mercado Libre", value=True,
                                  on_change=self._reclamo_cambio)
 
@@ -63,7 +64,8 @@ class VistaCarga:
         self.txt_fotos = ft.Text("", size=12, color=ft.Colors.ON_SURFACE_VARIANT)
 
         self.mensaje = ft.TextField(label="Mensaje de reclamo", multiline=True, min_lines=4, max_lines=6,
-                                    max_length=settings.LIMITE_MENSAJE, expand=True)
+                                    max_length=settings.LIMITE_MENSAJE, expand=True,
+                                    on_change=lambda _: self._actualizar_pasos())
         self.porcentaje = ft.TextField(label="% sugerido", width=130, suffix_text="%",
                                        input_filter=ft.NumbersOnlyInputFilter(), max_length=3,
                                        counter_text="")
@@ -84,7 +86,10 @@ class VistaCarga:
         self.btn_guardar = ft.FilledButton("Guardar", icon=ft.Icons.SAVE, on_click=self._guardar, height=46)
         self.btn_limpiar = ft.TextButton("Limpiar", icon=ft.Icons.CLEAR_ALL, on_click=self._limpiar)
         self.progreso = ft.ProgressBar(visible=False)
+        self.fila_pasos = ft.Row(wrap=True, spacing=8, run_spacing=8)
+        self.siguiente = ft.Text(size=14, weight=ft.FontWeight.W_600)
         self._actualizar_fecha()
+        self._actualizar_pasos(actualizar=False)
 
     def control(self) -> ft.Control:
         if self.selector_fecha not in self.page.overlay:
@@ -96,6 +101,11 @@ class VistaCarga:
             encabezado = titulo("Cargar devolución", "Complete los datos y las fotos del producto devuelto.")
         cuerpo = ft.Column([
             encabezado,
+            ft.Container(ft.Column([self.fila_pasos, ft.Row([ft.Icon(ft.Icons.ARROW_FORWARD, size=18,
+                                                                     color=ft.Colors.PRIMARY), self.siguiente])],
+                                   spacing=10),
+                         padding=14, border_radius=14,
+                         bgcolor=ft.Colors.with_opacity(0.08, ft.Colors.PRIMARY)),
             tarjeta(ft.Column([
                 seccion("Venta"),
                 ft.Row([self.numero, ft.Column([ft.Text("Vence el reclamo", size=12), self.btn_vence], spacing=2),
@@ -145,7 +155,7 @@ class VistaCarga:
         self.numero.helper_text = aviso
         if error and self.numero.value:
             self.numero.error_text = error
-        self.page.update()
+        self._actualizar_pasos()
         return None if error else numero
 
     def _verificar_duplicado(self, _=None) -> None:
@@ -184,11 +194,11 @@ class VistaCarga:
         if not self.editando:
             self.reclamo.value = self.clasif.value != "N"
             self.panel_reclamo.visible = self.reclamo.value
-        self.page.update()
+        self._actualizar_pasos()
 
     def _reclamo_cambio(self, _) -> None:
         self.panel_reclamo.visible = self.reclamo.value
-        self.page.update()
+        self._actualizar_pasos()
 
     def _pedir_fotos(self, _) -> None:
         self.app.selector_fotos.on_result = self._fotos_elegidas
@@ -236,8 +246,7 @@ class VistaCarga:
             ], width=150, height=150))
         n = len(self.fotos)
         self.txt_fotos.value = f"{n} foto(s) — máximo {settings.FOTOS_MAX_POR_DEVOLUCION}" if n else "Sin fotos"
-        if actualizar:
-            self.page.update()
+        self._actualizar_pasos(actualizar)
 
     # ------------------------------------------------------------ armado y guardado
 
@@ -337,7 +346,7 @@ class VistaCarga:
         if len(mensaje) > settings.LIMITE_MENSAJE:
             self.app.avisar(f"El mensaje tenía {len(mensaje)} caracteres y se recortó a "
                             f"{settings.LIMITE_MENSAJE}. Revíselo.", error=True)
-        self.page.update()
+        self._actualizar_pasos()
 
     def _guardar(self, _) -> None:
         datos = self._recolectar(exigir_fotos=bool(self.reclamo.value))
@@ -373,3 +382,40 @@ class VistaCarga:
         self.vence = dt.date.today().isoformat()
         self._actualizar_fecha()
         self._refrescar_galeria()
+
+    # ------------------------------------------------------------ guía de pasos
+
+    def _actualizar_pasos(self, actualizar: bool = True) -> None:
+        _n, error_num, _ = validar_numero_venta(self.numero.value)
+        reclamo = bool(self.reclamo.value)
+        pasos = [
+            ("Número de venta", not error_num, "Pegue el número de venta copiado de Mercado Libre."),
+            ("Clasificación", bool(self.clasif.value), "Elija la clasificación del producto."),
+            ("Estado", bool((self.descripcion.value or "").strip()),
+             "Escriba en qué estado llegó el producto."),
+            ("Fotos", bool(self.fotos) or not reclamo, "Toque \"Agregar fotos\" y elija las fotos."),
+        ]
+        if reclamo:
+            pasos.append(("Reclamo", bool((self.mensaje.value or "").strip()),
+                          "Toque \"Armar reclamo\" y después \"Pegar respuesta de Claude\"."))
+        self.fila_pasos.controls = []
+        for i, (nombre, ok, _ayuda) in enumerate(pasos, 1):
+            color = ft.Colors.GREEN_700 if ok else ft.Colors.OUTLINE
+            self.fila_pasos.controls.append(ft.Container(
+                ft.Row([ft.Icon(ft.Icons.CHECK_CIRCLE if ok else ft.Icons.RADIO_BUTTON_UNCHECKED,
+                                size=18, color=color),
+                        ft.Text(f"{i}. {nombre}", size=13, weight=ft.FontWeight.W_600,
+                                color=ft.Colors.GREEN_800 if ok else ft.Colors.ON_SURFACE_VARIANT)],
+                       spacing=6, tight=True),
+                padding=ft.padding.symmetric(6, 12), border_radius=20,
+                bgcolor=ft.Colors.with_opacity(0.12, ft.Colors.GREEN) if ok else ft.Colors.SURFACE,
+                border=ft.border.all(1, color)))
+        pendiente = next((ayuda for _nom, ok, ayuda in pasos if not ok), None)
+        self.siguiente.value = (f"Siguiente: {pendiente}" if pendiente
+                                else "Todo listo. Toque \"Guardar\".")
+        self.siguiente.color = ft.Colors.PRIMARY if pendiente else ft.Colors.GREEN_800
+        if actualizar:
+            try:
+                self.page.update()
+            except Exception:  # noqa: BLE001 - todavía no está en pantalla
+                pass

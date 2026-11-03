@@ -111,6 +111,9 @@ class App:
                 url=self.config.get("url_descarga"))
             return
         self.mostrar_shell()
+        from . import tutorial
+        if not tutorial.ya_visto(sesion.uid):
+            tutorial.mostrar(self)
         ultima = self.config.get("ultima_version")
         if ultima and comparar(VERSION, ultima) < 0:
             self.avisar(f"Hay una versión nueva disponible ({ultima}).")
@@ -327,6 +330,8 @@ class App:
             trailing=ft.Container(ft.Column([
                 ft.CircleAvatar(content=ft.Text((nombre[:1] or "?").upper()), radius=18,
                                 tooltip=f"{nombre}\n{settings.ROLES.get(self.usuario.get('rol'), '')}"),
+                ft.IconButton(ft.Icons.HELP_OUTLINE, tooltip="Ver el tutorial",
+                              on_click=lambda _: self._abrir_tutorial()),
                 ft.IconButton(ft.Icons.LOGOUT, tooltip="Cerrar sesión",
                               on_click=lambda _: self.confirmar("Cerrar sesión", "¿Desea cerrar la sesión?",
                                                                 self.salir, "Cerrar sesión")),
@@ -338,6 +343,10 @@ class App:
         )
         self._set(ft.Row([rail, ft.VerticalDivider(width=1), contenido], expand=True, spacing=0))
         ir(self._seccion_actual)
+
+    def _abrir_tutorial(self) -> None:
+        from . import tutorial
+        tutorial.mostrar(self)
 
     def ir_a(self, indice: int) -> None:
         self.mostrar_shell(indice)
