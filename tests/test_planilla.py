@@ -103,9 +103,23 @@ def test_pendientes_y_emails():
     asunto, cuerpo = P.email_transferencia(transf + transf)
     assert "Service Podestá" in asunto
     assert "RBXH0014 | KB-MH52D | 2" in cuerpo
-    outlet[0].sku_outlet = "TSE-9785-B"
+    assert outlet[0].sku_outlet == "ZB-TSE-9785"
     _, cuerpo = P.email_outlet(outlet)
-    assert "TSE-9785 | KB-XS | B | TSE-9785-B | 1" in cuerpo or "TSE-9785 | Soldadora" in cuerpo
+    assert "TSE-9785 | KB-XS | B | ZB-TSE-9785 | 1" in cuerpo
+    assert "Alta: SKU outlet en Outlet Podestá" in cuerpo
+
+
+def test_outlet_queda_en_service_podesta():
+    h = hoja_ejemplo()
+    plan = P.planificar(h, [dev("2000018604612862", clasificacion="B", condicion="Con uso")])
+    assert dict(plan.celdas)["J5"] == "Service Podesta"
+
+
+def test_sin_deposito_no_escribe_origen():
+    h = hoja_ejemplo()
+    d = dev("2000018604612862")
+    del d["deposito_origen"]
+    assert "G5" not in dict(P.planificar(h, [d]).celdas)
 
 
 @pytest.mark.parametrize("titulo,esperado", [

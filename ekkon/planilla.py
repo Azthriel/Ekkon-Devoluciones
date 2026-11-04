@@ -314,7 +314,8 @@ def pendientes(hoja: Hoja, tipo: str, modelos: dict | None = None) -> list[ItemE
         salida.append(ItemEmail(
             fila=hoja.numero_fila(i), venta=venta, sku=sku,
             producto=modelos.get(sku) or modelo(hoja.valor(i, C_ARTICULO)), clasificacion=clasif,
-            fecha=fecha_de_serial(hoja.valor(i, C_FECHA_REV))))
+            fecha=fecha_de_serial(hoja.valor(i, C_FECHA_REV)),
+            sku_outlet=settings.sku_outlet(sku, clasif) if tipo == "outlet" else ""))
     return salida
 
 

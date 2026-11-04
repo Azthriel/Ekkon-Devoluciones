@@ -21,9 +21,9 @@ PASOS_CARGA = [
     (ft.Icons.EVENT, "2. Fecha de vencimiento",
      ["Es el día en que vence el plazo para reclamar.",
       "Por defecto está la fecha de hoy. Tóquela para cambiarla."]),
-    (ft.Icons.LOCAL_SHIPPING, "3. Motivo y depósito",
+    (ft.Icons.LOCAL_SHIPPING, "3. Motivo",
      ["En \"Motivo\" elija el motivo de la devolución tal como figura en Mercado Libre.",
-      "En \"Depósito de origen\" deje Podesta. Elija Full solo si el producto vino del depósito de Full."]),
+      "Si no está seguro, mire la venta en Mercado Libre: el motivo figura en la devolución."]),
     (ft.Icons.CATEGORY, "4. Clasificación y condición",
      ["Clasificación: N vuelve a stock. A, B y C van a outlet. D, E y Service van al service externo. "
       "Service Interno se repara acá. Scrap es descarte.",

@@ -156,7 +156,7 @@ class VistaLista:
                     dato("% sugerido", f"{d['porcentaje_sugerido']}%" if d.get("porcentaje_sugerido") is not None
                          else None)], spacing=30, wrap=True),
             ft.Row([dato("Condición", d.get("condicion")), dato("Motivo", d.get("motivo")),
-                    dato("Depósito de origen", d.get("deposito_origen")),
+                    self._deposito(d) if self.app.es_admin else dato("Depósito de origen", d.get("deposito_origen")),
                     dato("N° de mediación", d.get("numero_mediacion")),
                     dato("Nota de crédito", "Realizada" if d.get("nc_realizada") else "Pendiente")],
                    spacing=30, wrap=True),
@@ -239,6 +239,18 @@ class VistaLista:
         self._actualizar()
 
     # ------------------------------------------------------------ acciones de administrador
+
+    def _deposito(self, d: dict) -> ft.Control:
+        def cambio(e):
+            try:
+                self.app.devs.actualizar(d["numero_venta"], {"deposito_origen": e.control.value})
+                d["deposito_origen"] = e.control.value
+                self.app.avisar(f"Depósito de origen: {e.control.value}.")
+            except FirebaseError as err:
+                self.app.manejar_error(err)
+
+        return ft.Dropdown(label="Depósito de origen", value=d.get("deposito_origen"), width=200, dense=True,
+                           options=[ft.dropdown.Option(x) for x in settings.DEPOSITOS_ORIGEN], on_change=cambio)
 
     def _marcar_nc(self, d: dict) -> None:
         try:

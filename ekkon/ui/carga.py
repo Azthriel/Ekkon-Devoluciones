@@ -56,10 +56,11 @@ class VistaCarga:
             options=[ft.dropdown.Option(m) for m in settings.MOTIVOS],
             helper_text="El motivo que figura en Mercado Libre.",
             on_change=lambda _: self._actualizar_pasos())
+        # Solo el administrador completa el depósito de origen
         self.deposito = ft.Dropdown(
-            label="Depósito de origen", width=220, value="Podesta",
+            label="Depósito de origen", width=220, value=None if self.editando else "Podesta",
             options=[ft.dropdown.Option(d) for d in settings.DEPOSITOS_ORIGEN],
-            helper_text="Full si vino del depósito de Full.")
+            helper_text="Full si vino del depósito de Full.", visible=self.app.es_admin)
         self.codigo = ft.TextField(label="SKU / código de producto", width=320, prefix_icon=ft.Icons.QR_CODE_2)
         self.link = ft.TextField(label="Link de la publicación", expand=True, prefix_icon=ft.Icons.LINK)
         self.problema = ft.TextField(label="Problema que informó el comprador", multiline=True,
@@ -156,7 +157,7 @@ class VistaCarga:
         self.clasif.value = d.get("clasificacion")
         self.condicion.value = d.get("condicion")
         self.motivo.value = d.get("motivo")
-        self.deposito.value = d.get("deposito_origen") or "Podesta"
+        self.deposito.value = d.get("deposito_origen")
         self.codigo.value = d.get("codigo_producto", "")
         self.link.value = d.get("link_publicacion", "")
         self.problema.value = d.get("problema_comprador", "")
@@ -311,13 +312,13 @@ class VistaCarga:
             estado = "cargada"
         if self.editando and self.existente.get("estado") not in settings.ESTADOS_EDITABLES_CARGA:
             estado = self.existente.get("estado")  # el admin ya avanzó el estado
-        return {
+        extra = {"deposito_origen": self.deposito.value} if self.app.es_admin and self.deposito.value else {}
+        return extra | {
             "numero_venta": numero,
             "fecha_vencimiento": self.vence,
             "clasificacion": self.clasif.value,
             "condicion": self.condicion.value,
             "motivo": self.motivo.value,
-            "deposito_origen": self.deposito.value or "Podesta",
             "codigo_producto": (self.codigo.value or "").strip(),
             "link_publicacion": (self.link.value or "").strip(),
             "problema_comprador": (self.problema.value or "").strip(),
