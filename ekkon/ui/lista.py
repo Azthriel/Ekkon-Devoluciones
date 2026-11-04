@@ -53,6 +53,11 @@ class VistaLista:
             filtros += [self.filtro, self.solo_hoy]
         filtros += [ft.IconButton(ft.Icons.REFRESH, tooltip="Actualizar", on_click=lambda _: self.recargar()),
                     self.contador]
+        if self.app.es_admin:
+            from .sincronizar import sincronizar
+            filtros += [ft.Container(expand=True),
+                        ft.FilledTonalButton("Sincronizar planilla", icon=ft.Icons.TABLE_CHART,
+                                             on_click=lambda _: sincronizar(self.app))]
         return ft.Column([
             encabezado,
             ft.Row(filtros, spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER),
@@ -150,6 +155,11 @@ class VistaLista:
                     dato("Código", d.get("codigo_producto")),
                     dato("% sugerido", f"{d['porcentaje_sugerido']}%" if d.get("porcentaje_sugerido") is not None
                          else None)], spacing=30, wrap=True),
+            ft.Row([dato("Condición", d.get("condicion")), dato("Motivo", d.get("motivo")),
+                    dato("Depósito de origen", d.get("deposito_origen")),
+                    dato("N° de mediación", d.get("numero_mediacion")),
+                    dato("Nota de crédito", "Realizada" if d.get("nc_realizada") else "Pendiente")],
+                   spacing=30, wrap=True),
             dato("Problema informado por el comprador", d.get("problema_comprador")),
             dato("Estado en que llegó", d.get("descripcion")),
         ]
@@ -200,9 +210,12 @@ class VistaLista:
         acciones: list[ft.Control] = [ft.TextButton("Abrir fotos en carpeta", icon=ft.Icons.FOLDER_OPEN,
                                                     on_click=abrir_carpeta)]
         if self.app.es_admin:
+            if not d.get("nc_realizada"):
+                acciones.append(ft.OutlinedButton("Marcar NC realizada", icon=ft.Icons.RECEIPT_LONG,
+                                                  on_click=lambda _: (cerrar(), self._marcar_nc(d))))
             if d.get("estado") == "reclamo_armado":
                 acciones.append(ft.OutlinedButton("Marcar reclamo enviado", icon=ft.Icons.SEND,
-                                                  on_click=lambda _: (cerrar(), self._cambiar_estado(d, "reclamado"))))
+                                                  on_click=lambda _: (cerrar(), self._reclamo_enviado(d))))
             if d.get("estado") in ("reclamado", "pendiente", "reclamo_armado"):
                 acciones.append(ft.FilledTonalButton("Registrar resultado", icon=ft.Icons.FACT_CHECK,
                                                      on_click=lambda _: (cerrar(), self.registrar_resultado(d))))
@@ -227,16 +240,35 @@ class VistaLista:
 
     # ------------------------------------------------------------ acciones de administrador
 
-    def _cambiar_estado(self, d: dict, estado: str) -> None:
+    def _marcar_nc(self, d: dict) -> None:
         try:
-            campos = {"estado": estado}
-            if estado == "reclamado":
-                campos["reclamado_en"] = dt.datetime.now(dt.timezone.utc)
-            self.app.devs.actualizar(d["numero_venta"], campos)
-            self.app.avisar(f"Venta {d['numero_venta']}: {settings.ESTADOS[estado]}.")
+            self.app.devs.actualizar(d["numero_venta"], {"nc_realizada": True})
+            self.app.avisar(f"Venta {d['numero_venta']}: NC marcada como realizada.")
         except FirebaseError as e:
             self.app.manejar_error(e)
         self.recargar()
+
+    def _reclamo_enviado(self, d: dict) -> None:
+        mediacion = ft.TextField(label="N° de mediación / reclamo en ML (opcional)", autofocus=True,
+                                 input_filter=ft.NumbersOnlyInputFilter())
+        dlg = ft.AlertDialog(modal=True, title=ft.Text(f"Reclamo enviado — {d['numero_venta']}"),
+                             content=ft.Container(mediacion, width=420))
+
+        def guardar(_):
+            self.page.close(dlg)
+            campos = {"estado": "reclamado", "reclamado_en": dt.datetime.now(dt.timezone.utc)}
+            if (mediacion.value or "").strip():
+                campos["numero_mediacion"] = mediacion.value.strip()
+            try:
+                self.app.devs.actualizar(d["numero_venta"], campos)
+                self.app.avisar(f"Venta {d['numero_venta']}: reclamo enviado.")
+            except FirebaseError as e:
+                self.app.manejar_error(e)
+            self.recargar()
+
+        dlg.actions = [ft.TextButton("Cancelar", on_click=lambda _: self.page.close(dlg)),
+                       ft.FilledButton("Guardar", on_click=guardar)]
+        self.page.open(dlg)
 
     def registrar_resultado(self, d: dict) -> None:
         resultado = ft.RadioGroup(content=ft.Row([

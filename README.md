@@ -2,7 +2,7 @@
 
 Programa de Windows para cargar y gestionar las devoluciones de Mercado Libre.
 
-## Qué hace (versión 0.1)
+## Qué hace
 
 - Inicio de sesión con Firebase y perfiles **Administrador** y **Carga**.
 - Bloqueo de usuarios desde la sección *Usuarios* (o desde la consola de Firebase). Un usuario bloqueado
@@ -13,6 +13,10 @@ Programa de Windows para cargar y gestionar las devoluciones de Mercado Libre.
   La respuesta se pega con *Pegar respuesta de Claude*, que separa el mensaje (máx. 320) del porcentaje.
 - Listado, detalle con fotos, *Pendientes* y registro del resultado (cobertura, monto y N° de movimiento).
 - Bloqueo de versiones viejas desde *Ajustes* (versión mínima permitida).
+- **Planilla (0.2)**: *Sincronizar planilla* completa la planilla de Google Sheets con una cuenta de servicio.
+  Solo completa celdas vacías y agrega ventas nuevas; nunca pisa lo escrito a mano (salvo *Pendiente* → resultado).
+- **Emails (0.2)**: arma la solicitud de transferencia Service Podestá → Podestá (NC de productos N) y la de
+  baja SKU nuevo / alta SKU outlet (NC de A, B y C), con *Abrir en Gmail* y *Marcar como enviado*.
 
 Todo funciona en el plan gratuito de Firebase (Spark): Auth + Firestore. Las fotos se comprimen
 (≤ 850 KB) y se guardan dentro de Firestore, porque Cloud Storage exige el plan Blaze desde febrero de 2026.

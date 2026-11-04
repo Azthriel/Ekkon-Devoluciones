@@ -46,7 +46,21 @@ class VistaCarga:
             label="Clasificación *", width=320,
             options=[ft.dropdown.Option(k, t) for k, t in settings.CLASIFICACIONES],
             on_change=self._clasif_cambio)
-        self.codigo = ft.TextField(label="Código de producto", width=320, prefix_icon=ft.Icons.QR_CODE_2)
+        self.condicion = ft.Dropdown(
+            label="Condición *", width=320,
+            options=[ft.dropdown.Option(c) for c in settings.CONDICIONES],
+            helper_text="Se sugiere sola según la clasificación. Revísela.",
+            on_change=lambda _: self._actualizar_pasos())
+        self.motivo = ft.Dropdown(
+            label="Motivo de la devolución *", width=480,
+            options=[ft.dropdown.Option(m) for m in settings.MOTIVOS],
+            helper_text="El motivo que figura en Mercado Libre.",
+            on_change=lambda _: self._actualizar_pasos())
+        self.deposito = ft.Dropdown(
+            label="Depósito de origen", width=220, value="Podesta",
+            options=[ft.dropdown.Option(d) for d in settings.DEPOSITOS_ORIGEN],
+            helper_text="Full si vino del depósito de Full.")
+        self.codigo = ft.TextField(label="SKU / código de producto", width=320, prefix_icon=ft.Icons.QR_CODE_2)
         self.link = ft.TextField(label="Link de la publicación", expand=True, prefix_icon=ft.Icons.LINK)
         self.problema = ft.TextField(label="Problema que informó el comprador", multiline=True,
                                      min_lines=2, max_lines=4,
@@ -98,7 +112,11 @@ class VistaCarga:
             encabezado = titulo(f"Editar venta {self.existente['numero_venta']}",
                                 "Los cambios se guardan sobre la carga existente.")
         else:
-            encabezado = titulo("Cargar devolución", "Complete los datos y las fotos del producto devuelto.")
+            encabezado = ft.Row([
+                titulo("Cargar devolución", "Complete los datos y las fotos del producto devuelto."),
+                ft.OutlinedButton("Ver en ML las que vencen hoy", icon=ft.Icons.OPEN_IN_NEW,
+                                  on_click=lambda _: self.page.launch_url(settings.URL_ML_VENCEN_HOY)),
+            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN, vertical_alignment=ft.CrossAxisAlignment.START)
         cuerpo = ft.Column([
             encabezado,
             ft.Container(ft.Column([self.fila_pasos, ft.Row([ft.Icon(ft.Icons.ARROW_FORWARD, size=18,
@@ -109,12 +127,16 @@ class VistaCarga:
             tarjeta(ft.Column([
                 seccion("Venta"),
                 ft.Row([self.numero, ft.Column([ft.Text("Vence el reclamo", size=12), self.btn_vence], spacing=2),
-                        self.clasif], wrap=True, spacing=16, vertical_alignment=ft.CrossAxisAlignment.START),
-                ft.Row([self.codigo, self.link], spacing=16),
+                        self.deposito], wrap=True, spacing=16, vertical_alignment=ft.CrossAxisAlignment.START),
+                ft.Row([self.motivo, self.codigo], wrap=True, spacing=16,
+                       vertical_alignment=ft.CrossAxisAlignment.START),
+                self.link,
                 self.problema,
             ], spacing=14)),
             tarjeta(ft.Column([
-                seccion("Estado y fotos"),
+                seccion("Clasificación, estado y fotos"),
+                ft.Row([self.clasif, self.condicion], wrap=True, spacing=16,
+                       vertical_alignment=ft.CrossAxisAlignment.START),
                 self.descripcion,
                 ft.Row([self.btn_fotos, self.txt_fotos], spacing=12),
                 self.galeria,
@@ -132,6 +154,9 @@ class VistaCarga:
         d = self.existente
         self.numero.value = d.get("numero_venta", "")
         self.clasif.value = d.get("clasificacion")
+        self.condicion.value = d.get("condicion")
+        self.motivo.value = d.get("motivo")
+        self.deposito.value = d.get("deposito_origen") or "Podesta"
         self.codigo.value = d.get("codigo_producto", "")
         self.link.value = d.get("link_publicacion", "")
         self.problema.value = d.get("problema_comprador", "")
@@ -191,6 +216,10 @@ class VistaCarga:
         self.btn_vence.text = f"{d}/{m}/{a}" + ("  (hoy)" if hoy else "")
 
     def _clasif_cambio(self, _) -> None:
+        sugerida = settings.CONDICION_SUGERIDA.get(self.clasif.value)
+        sugeridas = set(settings.CONDICION_SUGERIDA.values())
+        if sugerida and (not self.condicion.value or self.condicion.value in sugeridas):
+            self.condicion.value = sugerida
         if not self.editando:
             self.reclamo.value = self.clasif.value != "N"
             self.panel_reclamo.visible = self.reclamo.value
@@ -257,6 +286,10 @@ class VistaCarga:
             faltan.append("número de venta")
         if not self.clasif.value:
             faltan.append("clasificación")
+        if not self.condicion.value:
+            faltan.append("condición")
+        if not self.motivo.value:
+            faltan.append("motivo")
         if not (self.descripcion.value or "").strip():
             faltan.append("estado en que llegó")
         if exigir_fotos and not self.fotos:
@@ -282,6 +315,9 @@ class VistaCarga:
             "numero_venta": numero,
             "fecha_vencimiento": self.vence,
             "clasificacion": self.clasif.value,
+            "condicion": self.condicion.value,
+            "motivo": self.motivo.value,
+            "deposito_origen": self.deposito.value or "Podesta",
             "codigo_producto": (self.codigo.value or "").strip(),
             "link_publicacion": (self.link.value or "").strip(),
             "problema_comprador": (self.problema.value or "").strip(),
@@ -377,6 +413,9 @@ class VistaCarga:
         self.numero.helper_text = None
         self.numero.read_only = False
         self.clasif.value = None
+        self.condicion.value = None
+        self.motivo.value = None
+        self.deposito.value = "Podesta"
         self.reclamo.value = True
         self.panel_reclamo.visible = True
         self.vence = dt.date.today().isoformat()
@@ -390,7 +429,9 @@ class VistaCarga:
         reclamo = bool(self.reclamo.value)
         pasos = [
             ("Número de venta", not error_num, "Pegue el número de venta copiado de Mercado Libre."),
+            ("Motivo", bool(self.motivo.value), "Elija el motivo de la devolución que figura en ML."),
             ("Clasificación", bool(self.clasif.value), "Elija la clasificación del producto."),
+            ("Condición", bool(self.condicion.value), "Revise o elija la condición del producto."),
             ("Estado", bool((self.descripcion.value or "").strip()),
              "Escriba en qué estado llegó el producto."),
             ("Fotos", bool(self.fotos) or not reclamo, "Toque \"Agregar fotos\" y elija las fotos."),

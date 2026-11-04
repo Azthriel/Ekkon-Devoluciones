@@ -48,6 +48,10 @@ def armar_prompt(d: dict, cantidad_fotos: int) -> str:
         f"Número de venta: {d.get('numero_venta', '')}",
         f"Clasificación: {descripcion_clasificacion(d.get('clasificacion', ''))}",
     ]
+    if d.get("condicion"):
+        lineas.append(f"Condición: {d['condicion']}")
+    if d.get("motivo"):
+        lineas.append(f"Motivo de la devolución en ML: {d['motivo']}")
     if d.get("codigo_producto"):
         lineas.append(f"Código de producto: {d['codigo_producto']}")
     if d.get("link_publicacion"):

@@ -5,3 +5,5 @@ dist/
 *.spec
 .venv/
 service-account*.json
+cuenta_servicio*.json
+*.xlsx

@@ -18,15 +18,47 @@ FOTOS_MAX_POR_DEVOLUCION = 8
 FOTO_LADO_MAXIMO = 1600
 FOTO_BYTES_MAXIMOS = 850_000
 
+URL_ML_VENCEN_HOY = ("https://vendedores.mercadolibre.com.ar/post-purchase/post-sales"
+                     "?main.filter=returns&temporal.filter=urgent#from=seller-menu")
+
+# Los códigos coinciden con las listas desplegables de la planilla "Devoluciones nuevo"
 CLASIFICACIONES = [
-    ("N", "N — Vuelve a stock de venta"),
+    ("N", "N — Nuevo, vuelve a stock de venta"),
     ("A", "A — Outlet"),
     ("B", "B — Outlet"),
     ("C", "C — Outlet"),
     ("D", "D — Service externo"),
     ("E", "E — Service externo"),
     ("Service", "Service — Service externo"),
+    ("Service Interno", "Service Interno — Se repara acá"),
+    ("Scrap", "Scrap — Irreparable / descarte"),
 ]
+
+CONDICIONES = ["buena", "caja rota", "Con uso", "Service", "Service Interno",
+               "Extraviado", "Irreparable", "Objeto distinto"]
+
+# Condición que se sugiere al elegir la clasificación (Alan puede cambiarla)
+CONDICION_SUGERIDA = {
+    "N": "buena", "A": "caja rota", "B": "Con uso", "C": "Con uso", "D": "Service", "E": "Service",
+    "Service": "Service", "Service Interno": "Service Interno", "Scrap": "Irreparable",
+}
+
+MOTIVOS = ["no lo quiere", "cancelado", "no funciona", "Roto", "Extraviado",
+           "No cumple con las caracteristicas de la publicación", "Recibio otra cosa",
+           "Faltan partes o accesorios", "No se pudo entregar"]
+
+DEPOSITOS_ORIGEN = ["Podesta", "Full", "LP"]
+
+# Depósito final que se escribe en la planilla según la clasificación
+DEPOSITO_FINAL = {
+    "N": "Podestá", "A": "Outlet Podesta", "B": "Outlet Podesta", "C": "Outlet Podesta",
+    "D": "Service Podesta", "E": "Service Podesta", "Service": "Service Podesta",
+    "Service Interno": "Service Podesta", "Scrap": "Scrap",
+}
+CLASIFICACIONES_OUTLET = ("A", "B", "C")
+
+# Planilla de Google Sheets
+HOJA_PLANILLA = "Devoluciones"
 
 ESTADOS = {
     "cargada": "Cargada",

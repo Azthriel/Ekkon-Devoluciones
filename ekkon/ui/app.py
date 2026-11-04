@@ -287,6 +287,7 @@ class App:
         from .lista import VistaLista
         from .usuarios import VistaUsuarios
         from .ajustes import VistaAjustes
+        from .emails import VistaEmails
 
         secciones = [
             ("Cargar", ft.Icons.ADD_A_PHOTO_OUTLINED, ft.Icons.ADD_A_PHOTO, lambda: VistaCarga(self).control()),
@@ -297,6 +298,7 @@ class App:
             secciones += [
                 ("Pendientes", ft.Icons.HOURGLASS_EMPTY, ft.Icons.HOURGLASS_FULL,
                  lambda: VistaLista(self, modo="pendientes").control()),
+                ("Emails", ft.Icons.MAIL_OUTLINE, ft.Icons.MAIL, lambda: VistaEmails(self).control()),
                 ("Usuarios", ft.Icons.PEOPLE_OUTLINE, ft.Icons.PEOPLE, lambda: VistaUsuarios(self).control()),
                 ("Ajustes", ft.Icons.SETTINGS_OUTLINED, ft.Icons.SETTINGS, lambda: VistaAjustes(self).control()),
             ]
