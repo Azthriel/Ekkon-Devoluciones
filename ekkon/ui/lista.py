@@ -29,11 +29,16 @@ class VistaLista:
         opciones += [ft.dropdown.Option(k, v) for k, v in settings.ESTADOS.items()]
         self.filtro = ft.Dropdown(options=opciones, value="todos", width=230, dense=True,
                                   on_change=lambda _: self._pintar())
+        self.filtro_pend = ft.Dropdown(
+            value="todos", width=330, dense=True, on_change=lambda _: self._pintar(),
+            options=[ft.dropdown.Option("todos", "Sin NC o esperando cobertura"),
+                     ft.dropdown.Option("sin_nc", "Sin nota de crédito"),
+                     ft.dropdown.Option("cobertura", "Esperando cobertura de ML")])
         self.solo_hoy = ft.Checkbox(label="Vencen hoy", value=False, on_change=lambda _: self._pintar())
         self.contador = ft.Text("", color=ft.Colors.ON_SURFACE_VARIANT)
         self.tabla = ft.DataTable(
             columns=[ft.DataColumn(ft.Text(t)) for t in
-                     ("Venta", "Vence", "Clasif.", "Reclamo", "%", "Estado", "Cargó", "Carga")],
+                     ("Venta", "Vence", "Clasif.", "Reclamo", "%", "Estado", "NC", "Cargó", "Carga")],
             rows=[], heading_row_height=40, data_row_min_height=44, data_row_max_height=52,
             column_spacing=22, show_checkbox_column=False, expand=True)
         self.cargando = ft.ProgressBar(visible=False)
@@ -47,13 +52,15 @@ class VistaLista:
 
     def _vista_listado(self) -> ft.Control:
         if self.modo == "pendientes":
-            encabezado = titulo("Pendientes", "Reclamos enviados que esperan la respuesta de Mercado Libre. "
-                                              "Abra cada uno para registrar si hubo cobertura.")
+            encabezado = titulo("Pendientes", "Devoluciones sin nota de crédito (con o sin reclamo) y reclamos "
+                                              "enviados que esperan la respuesta de Mercado Libre.")
         else:
             encabezado = titulo("Devoluciones", "Toque una fila para ver el detalle.")
         filtros: list[ft.Control] = [self.buscar]
         if self.modo != "pendientes":
             filtros += [self.filtro, self.solo_hoy]
+        else:
+            filtros += [self.filtro_pend]
         filtros += [ft.IconButton(ft.Icons.REFRESH, tooltip="Actualizar", on_click=lambda _: self.recargar()),
                     self.contador]
         if self.app.es_admin:
@@ -107,7 +114,11 @@ class VistaLista:
         for d in self.filas:
             estado = d.get("estado")
             if self.modo == "pendientes":
-                if estado not in ESTADOS_PENDIENTES:
+                sin_nc = not d.get("nc_realizada")
+                esperando = estado in ESTADOS_PENDIENTES
+                que = self.filtro_pend.value or "todos"
+                if (que == "sin_nc" and not sin_nc) or (que == "cobertura" and not esperando) \
+                        or (que == "todos" and not (sin_nc or esperando)):
                     continue
             else:
                 if self.filtro.value not in (None, "todos") and estado != self.filtro.value:
@@ -142,6 +153,9 @@ class VistaLista:
                                         size=18)),
                     ft.DataCell(ft.Text(f"{pct}%" if pct is not None else "—")),
                     ft.DataCell(chip_estado(d.get("estado", ""))),
+                    ft.DataCell(ft.Icon(ft.Icons.RECEIPT_LONG, color=ft.Colors.GREEN_700, size=18,
+                                        tooltip="NC realizada") if d.get("nc_realizada") else
+                                ft.Text("Pendiente", size=12, color=ft.Colors.AMBER_800)),
                     ft.DataCell(ft.Text((d.get("cargado_por") or "").split("@")[0])),
                     ft.DataCell(ft.Text(fecha_corta(d.get("cargado_en")))),
                 ],
