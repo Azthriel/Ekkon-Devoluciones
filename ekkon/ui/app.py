@@ -60,8 +60,8 @@ class App:
         p.padding = 0
         p.window.width = 1320
         p.window.height = 860
-        p.window.min_width = 1050
-        p.window.min_height = 680
+        p.window.min_width = 900
+        p.window.min_height = 560
         p.overlay.append(self.selector_fotos)
 
         if not settings.FIREBASE_API_KEY:

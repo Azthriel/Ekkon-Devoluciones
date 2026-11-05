@@ -1,4 +1,4 @@
-VERSION = "0.4.2"
+VERSION = "0.4.3"
 
 
 def comparar(a: str, b: str) -> int:

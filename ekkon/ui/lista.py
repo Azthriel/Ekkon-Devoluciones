@@ -73,10 +73,11 @@ class VistaLista:
                                 vertical_alignment=ft.CrossAxisAlignment.START)
         return ft.Column([
             encabezado,
-            ft.Row(filtros, spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER, wrap=True),
+            ft.Row(filtros, spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER, scroll=ft.ScrollMode.AUTO),
             self.cargando,
-            tarjeta(ft.Column([ft.Row([self.tabla], scroll=ft.ScrollMode.AUTO)], scroll=ft.ScrollMode.AUTO,
-                              expand=True), padding=8),
+            # La tarjeta ocupa el alto que queda: la tabla se desplaza dentro (vertical y horizontal)
+            tarjeta(ft.Column([ft.Row([self.tabla], scroll=ft.ScrollMode.AUTO)], scroll=ft.ScrollMode.ALWAYS,
+                              expand=True), padding=8, expand=True),
         ], spacing=14, expand=True)
 
     def recargar(self) -> None:
@@ -168,7 +169,7 @@ class VistaLista:
         if self.modo == "pendientes":
             por_enviar = sum(1 for d in self.filas if d.get("estado") == "reclamo_armado")
             if por_enviar:
-                self.contador.value += f"  ·  {por_enviar} reclamo(s) armados que Alan todavía no envió"
+                self.contador.value += f"  ·  {por_enviar} reclamo(s) sin enviar a ML"
         self._actualizar()
 
     # ------------------------------------------------------------ detalle

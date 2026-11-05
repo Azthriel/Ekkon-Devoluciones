@@ -37,10 +37,11 @@ def titulo(texto: str, subtitulo: str | None = None) -> ft.Control:
     return ft.Column(filas, spacing=2)
 
 
-def tarjeta(contenido: ft.Control, padding: int = 20) -> ft.Control:
+def tarjeta(contenido: ft.Control, padding: int = 20, expand: bool = False) -> ft.Control:
     return ft.Container(
         contenido,
         padding=padding,
+        expand=expand,
         border_radius=14,
         bgcolor=ft.Colors.with_opacity(0.45, ft.Colors.SURFACE_CONTAINER_HIGHEST),
         border=ft.border.all(1, ft.Colors.OUTLINE_VARIANT),
