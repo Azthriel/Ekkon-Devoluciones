@@ -130,18 +130,30 @@ class App:
                 self.avisar(f"Se cambió \"Service Interno\" por \"Service\" en {n} devolución(es).")
             # Devoluciones cargadas con el ID Carrito en versiones anteriores: pasan al Venta #
             movidas = 0
+            # y las que se cargaron antes de importar el informe reciben producto, pedido, fecha, etc.
+            completadas = 0
             for d in self.devs.recientes(1000):
-                if d.get("producto") or d.get("carrito"):
+                if d.get("producto"):
                     continue
                 r = self.indice.buscar(d["numero_venta"])
-                if r.tipo == "carrito" and r.venta:
-                    v = r.venta
-                    extra = {"producto": v.producto, "fecha_venta": v.fecha.isoformat() if v.fecha else "",
-                             "sucursal": v.sucursal, "pedido": v.pedido, "precio_unitario": v.precio}
+                if not r.venta:
+                    continue
+                v = r.venta
+                extra = {"producto": v.producto, "fecha_venta": v.fecha.isoformat() if v.fecha else "",
+                         "sucursal": v.sucursal, "pedido": v.pedido, "carrito": v.carrito,
+                         "precio_unitario": v.precio}
+                if not d.get("codigo_producto") and v.codigo:
+                    extra["codigo_producto"] = v.codigo
+                if r.tipo == "carrito":
                     if self.devs.mover(d["numero_venta"], v.venta, extra):
                         movidas += 1
+                else:
+                    self.devs.actualizar(d["numero_venta"], extra)
+                    completadas += 1
             if movidas:
                 self.avisar(f"{movidas} devolución(es) cargadas con el ID Carrito pasaron a su Venta #.")
+            if completadas:
+                self.avisar(f"Se completaron producto, pedido y fecha de venta en {completadas} devolución(es).")
         except FirebaseError:
             return
 

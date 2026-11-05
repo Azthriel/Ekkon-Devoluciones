@@ -138,6 +138,19 @@ class VistaLista:
         return self.app.es_admin or d.get("estado") in settings.ESTADOS_EDITABLES_CARGA
 
     def abrir_detalle(self, d: dict) -> None:
+        if not d.get("producto"):
+            # Cargada antes de importar el informe: se muestran los datos del informe igual
+            try:
+                v = self.app.indice.venta(d.get("numero_venta", ""))
+            except FirebaseError:
+                v = None
+            if v:
+                d = dict(d)
+                d.update({"producto": v.producto, "pedido": v.pedido, "carrito": v.carrito,
+                          "fecha_venta": v.fecha.isoformat() if v.fecha else ""})
+                d.setdefault("codigo_producto", v.codigo)
+                if not d.get("codigo_producto"):
+                    d["codigo_producto"] = v.codigo
         galeria = ft.Row([ft.ProgressRing(width=24, height=24)], wrap=True, spacing=8, run_spacing=8)
         fotos: list[bytes] = []
 
