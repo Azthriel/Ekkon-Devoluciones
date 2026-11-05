@@ -5,6 +5,8 @@ import datetime as dt
 
 import flet as ft
 
+from ..local import abrir_url
+
 from .. import local, settings
 from ..datos import armar_prompt, leer_respuesta_claude, validar_numero_venta
 from ..firebase import FirebaseError
@@ -120,7 +122,7 @@ class VistaCarga:
             encabezado = ft.Row([
                 titulo("Cargar devolución", "Complete los datos y las fotos del producto devuelto."),
                 ft.OutlinedButton("Ver en ML las que vencen hoy", icon=ft.Icons.OPEN_IN_NEW,
-                                  on_click=lambda _: self.page.launch_url(settings.URL_ML_VENCEN_HOY)),
+                                  on_click=lambda _: abrir_url(page=self.page, url=settings.URL_ML_VENCEN_HOY)),
             ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN, vertical_alignment=ft.CrossAxisAlignment.START)
         cuerpo = ft.Column([
             encabezado,
@@ -465,7 +467,7 @@ class VistaCarga:
             self.page.set_clipboard(prompt)
             carpeta = local.guardar_fotos(datos["numero_venta"], self.fotos)
             local.abrir_carpeta(carpeta)
-            self.page.launch_url(self.app.config.get("claude_project_url") or URL_CLAUDE_POR_DEFECTO)
+            abrir_url(page=self.page, url=self.app.config.get("claude_project_url") or URL_CLAUDE_POR_DEFECTO)
             self.app.avisar("Datos copiados. Péguelos en Claude con Ctrl+V y arrastre las fotos de la carpeta.")
         finally:
             self._ocupado(False)

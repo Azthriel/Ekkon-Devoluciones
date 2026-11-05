@@ -5,6 +5,8 @@ import datetime as dt
 
 import flet as ft
 
+from ..local import abrir_url
+
 from .. import local, settings
 from ..datos import descripcion_clasificacion
 from ..firebase import FirebaseError
@@ -181,7 +183,7 @@ class VistaLista:
         ]
         if d.get("link_publicacion"):
             cuerpo.append(ft.TextButton("Abrir publicación", icon=ft.Icons.OPEN_IN_NEW,
-                                        on_click=lambda _: self.page.launch_url(d["link_publicacion"])))
+                                        on_click=lambda _: abrir_url(page=self.page, url=d["link_publicacion"])))
         if d.get("reclamo"):
             cuerpo.append(tarjeta(ft.Column([
                 ft.Row([seccion("Mensaje de reclamo"),

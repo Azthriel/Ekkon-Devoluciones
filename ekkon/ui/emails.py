@@ -10,6 +10,8 @@ from urllib.parse import quote
 
 import flet as ft
 
+from ..local import abrir_url
+
 from .. import settings
 from ..firebase import FirebaseError
 from ..planilla import C_TRANSF, EMAIL_ENVIADO, email_transferencia, enviados, letra_columna, pendientes
@@ -167,7 +169,7 @@ class VistaEmails:
                 return
             self._recordar_modelos(sel)
             asunto, cuerpo = email_transferencia(sel)
-            self.page.launch_url("https://mail.google.com/mail/?view=cm&fs=1"
+            abrir_url(page=self.page, url="https://mail.google.com/mail/?view=cm&fs=1"
                                  f"&to={quote(destinatarios())}&su={quote(asunto)}&body={quote(cuerpo)}")
 
         def enviado(_):

@@ -6,6 +6,8 @@ import time
 
 import flet as ft
 
+from ..local import abrir_url
+
 from .. import local, settings
 from ..datos import ConfigApp, Devoluciones, Usuarios
 from ..ventas import Indice
@@ -250,7 +252,7 @@ class App:
         acciones: list[ft.Control] = []
         if url:
             acciones.append(ft.FilledButton("Descargar versión nueva", icon=ft.Icons.DOWNLOAD,
-                                            on_click=lambda _: self.page.launch_url(url)))
+                                            on_click=lambda _: abrir_url(page=self.page, url=url)))
         if self.sesion:
             acciones.append(ft.TextButton("Cerrar sesión", on_click=lambda _: self.salir()))
         self._set(self._centrado(tarjeta(ft.Column(

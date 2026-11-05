@@ -62,3 +62,31 @@ def abrir_carpeta(ruta: Path) -> None:
             subprocess.Popen(["xdg-open", str(ruta)])
     except OSError:
         pass
+
+
+def ruta_chrome() -> str | None:
+    """Ubicación de chrome.exe en Windows (instalación para todos o para el usuario)."""
+    if not sys.platform.startswith("win"):
+        return None
+    for base in (os.environ.get("PROGRAMFILES"), os.environ.get("PROGRAMFILES(X86)"), os.environ.get("LOCALAPPDATA")):
+        if base:
+            ruta = Path(base) / "Google" / "Chrome" / "Application" / "chrome.exe"
+            if ruta.exists():
+                return str(ruta)
+    return None
+
+
+def abrir_url(url: str, page=None) -> None:
+    """Abre el link en Google Chrome si está instalado; si no, en el navegador predeterminado."""
+    chrome = ruta_chrome()
+    if chrome:
+        try:
+            subprocess.Popen([chrome, url])
+            return
+        except OSError:
+            pass
+    if page is not None:
+        page.launch_url(url)
+    else:
+        import webbrowser
+        webbrowser.open(url)
