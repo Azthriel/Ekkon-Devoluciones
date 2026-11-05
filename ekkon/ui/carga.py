@@ -37,7 +37,7 @@ class VistaCarga:
 
     def _armar_controles(self) -> None:
         self.numero = ft.TextField(
-            label="Número de venta *", hint_text="2000012345678901", width=320,
+            label="Venta # o ID Carrito *", hint_text="2000012345678901", width=320,
             prefix_icon=ft.Icons.TAG, on_change=self._validar_numero, on_blur=self._verificar_duplicado,
             read_only=self.editando)
         self.info_venta = ft.Container(visible=False, border_radius=10, padding=ft.padding.symmetric(10, 14))
@@ -207,12 +207,16 @@ class VistaCarga:
         fecha = v.fecha.strftime("%d/%m/%Y") if v.fecha else "—"
         return f"{v.producto or 'Producto sin nombre'} · SKU {v.codigo or '—'} · vendida el {fecha} · {v.deposito}"
 
+    def _numero_resuelto(self) -> tuple[str, str | None]:
+        """Número a guardar (siempre el Venta #) y error de validación."""
+        numero, error, _ = validar_numero_venta(self.numero.value)
+        v = self.venta_info
+        if not error and v and numero in (v.venta, v.carrito):
+            numero = v.venta
+        return numero, error
+
     def _usar_venta(self, v: Venta, aviso: str | None = None) -> None:
         self.venta_info = v
-        if self.numero.value != v.venta and not self.editando:
-            self.numero.value = v.venta
-            self.numero.helper_text = None
-        self._ultimo_buscado = v.venta
         if not (self.codigo.value or "").strip() and v.codigo:
             self.codigo.value = v.codigo
         texto = self._resumen(v)
@@ -235,7 +239,7 @@ class VistaCarga:
         if r.tipo == "venta":
             self._usar_venta(r.venta)
         elif r.tipo == "carrito" and r.venta:
-            self._usar_venta(r.venta, f"Ese número es el ID Carrito. Se cambió por el Venta # {r.venta.venta}.")
+            self._usar_venta(r.venta, f"ID Carrito {numero}  →  Venta # {r.venta.venta} (en la planilla va el Venta #).")
         elif r.tipo == "carrito":
             self._elegir_venta_del_carrito(numero, r.opciones)
         else:
@@ -265,10 +269,9 @@ class VistaCarga:
                 v = self.app.indice.venta(grupo.value)
             except FirebaseError:
                 v = None
-            if v:
-                self._usar_venta(v, f"Carrito {carrito}: se eligió el Venta # {v.venta}.")
-            else:
-                self.numero.value = grupo.value
+            if not v:
+                v = Venta(grupo.value, carrito, "", None, "", "", "", 1, None)
+            self._usar_venta(v, f"ID Carrito {carrito}  →  Venta # {v.venta} (en la planilla va el Venta #).")
             self._actualizar_pasos()
 
         dlg.actions = [ft.TextButton("Cancelar", on_click=lambda _: self.page.close(dlg)),
@@ -278,7 +281,7 @@ class VistaCarga:
     def _verificar_duplicado(self, _=None) -> None:
         if self.editando:
             return
-        numero, error, _aviso = validar_numero_venta(self.numero.value)
+        numero, error = self._numero_resuelto()
         if error:
             return
         try:
@@ -372,7 +375,7 @@ class VistaCarga:
     # ------------------------------------------------------------ armado y guardado
 
     def _recolectar(self, exigir_fotos: bool) -> dict | None:
-        numero, error, _ = validar_numero_venta(self.numero.value)
+        numero, error = self._numero_resuelto()
         faltan = []
         if error:
             faltan.append("número de venta")

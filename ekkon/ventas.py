@@ -21,7 +21,7 @@ PARTES = 100
 DIAS_A_CONSERVAR = 180
 
 # Sucursal de Virtual Seller -> "Deposito origen" de la planilla
-DEPOSITO_POR_SUCURSAL = {"podesta": "Podesta", "fulfillment": "Full", "boedo": "LP"}
+DEPOSITO_POR_SUCURSAL = {"podesta": "Podesta", "fulfillment": "Full", "boedo": "LP", "general paz": "GP"}
 
 
 def _norm(t: str) -> str:

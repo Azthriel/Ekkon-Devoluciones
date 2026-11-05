@@ -8,6 +8,7 @@ CSV = '''"Pedido: ID";"Venta ML#: Venta #";"ID Carrito";"Venta ML#: Fecha/Hora  
 "PED-2";"2000018016486734";"2000014609910837";"19/8/2026, 13:09";"FPC-0024";"KOMMBERG CEPILLADORA (KB-CE650)";"Fulfillment";"1";"81171,80"
 "PED-3";"2000017188543148";"2000013782033763";"1/7/2026, 00:27";"RSPF0060";"MASCARA (KB-MF25E)";"Podestá";"1";"21978,80"
 "PED-3";"2000017188548602";"2000013782033763";"1/7/2026, 00:27";"FPA-0166";"AMOLADORA (KB-AM115)";"Boedo";"2";"44438,38"
+"PED-4";"2000017188549999";"";"1/7/2026, 00:30";"FPA-0001";"OTRO";"General Paz";"1";"1000,00"
 
 
 "Ventas ML para APP"
@@ -22,7 +23,8 @@ def cargar():
 
 def test_lee_csv_de_salesforce():
     vs = V.leer_csv(CSV)
-    assert len(vs) == 4                      # ignora las líneas finales de Salesforce
+    assert len(vs) == 5                      # ignora las líneas finales de Salesforce
+    assert vs[4].deposito == "GP"
     v = vs[0]
     assert (v.pedido, v.venta, v.carrito, v.fecha) == ("PED-1", "2000017796698832", "", dt.date(2026, 8, 6))
     assert v.precio == 88606.56 and v.deposito == "Podesta"
@@ -51,7 +53,7 @@ def test_partes_y_busqueda():
 def test_combinar_conserva_180_dias():
     viejas = {"1": V.Venta("1", "", "", dt.date(2026, 1, 1), "", "", "", 1, None)}
     todas = V.combinar(viejas, list(cargar().values()), hoy=dt.date(2026, 11, 5))
-    assert "1" not in todas and len(todas) == 4
+    assert "1" not in todas and len(todas) == 5
 
 
 def test_planilla_se_completa_con_el_informe():

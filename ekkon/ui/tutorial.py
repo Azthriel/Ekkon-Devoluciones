@@ -16,7 +16,7 @@ PASOS_CARGA = [
     (ft.Icons.TAG, "1. Número de venta",
      ["El botón \"Ver en ML las que vencen hoy\" abre la lista de devoluciones del día en Mercado Libre.",
       "Copie el número desde ahí y péguelo con Ctrl+V. No lo escriba a mano.",
-      "Sirve el Venta # o el ID Carrito: si pega el carrito, el programa lo cambia solo por el Venta #. "
+      "Sirve el Venta # o el ID Carrito. Si pega el carrito, el programa le muestra a qué Venta # corresponde. "
       "Si el carrito tiene varios productos, le pregunta cuál se devolvió.",
       "Debajo del número aparece el producto: fíjese que sea el que tiene en la mano.",
       "Si el número tiene algo raro, el programa le avisa debajo del campo.",
