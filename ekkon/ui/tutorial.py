@@ -55,7 +55,10 @@ PASOS_ADMIN = [
     (ft.Icons.TABLE_CHART, "Planilla y emails",
      ["En \"Devoluciones\", el botón \"Sincronizar planilla\" completa la planilla de Google Sheets.",
       "Solo completa celdas vacías y agrega las ventas que faltan. Nunca pisa lo que usted escribió.",
-      "En \"Emails\" se arma la solicitud de transferencia con las filas \"A la espera de movimiento\"."]),
+      "Al marcar la NC realizada: N y Scrap quedan \"A la espera de movimiento\"; el resto queda \"Realizada\" "
+      "en Service Podesta.",
+      "En \"Transferencias\" se arma el email con las que esperan movimiento y, cuando las lleva, "
+      "se marcan como Realizada."]),
     (ft.Icons.SETTINGS, "Ajustes",
      ["Cargue el link del proyecto de Claude, el link de la planilla, la clave de la cuenta de servicio "
       "y los destinatarios de los emails.",

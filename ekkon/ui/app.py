@@ -118,6 +118,16 @@ class App:
         if ultima and comparar(VERSION, ultima) < 0:
             self.avisar(f"Hay una versión nueva disponible ({ultima}).")
         self._iniciar_vigilante()
+        if self.es_admin:
+            threading.Thread(target=self._migraciones, daemon=True).start()
+
+    def _migraciones(self) -> None:
+        try:
+            n = self.devs.migrar_service_interno()
+        except FirebaseError:
+            return
+        if n:
+            self.avisar(f"Se cambió \"Service Interno\" por \"Service\" en {n} devolución(es).")
 
     def salir(self, mensaje: str | None = None) -> None:
         local.borrar_sesion()
@@ -298,7 +308,7 @@ class App:
             secciones += [
                 ("Pendientes", ft.Icons.HOURGLASS_EMPTY, ft.Icons.HOURGLASS_FULL,
                  lambda: VistaLista(self, modo="pendientes").control()),
-                ("Emails", ft.Icons.MAIL_OUTLINE, ft.Icons.MAIL, lambda: VistaEmails(self).control()),
+                ("Transferencias", ft.Icons.MOVE_UP_OUTLINED, ft.Icons.MOVE_UP, lambda: VistaEmails(self).control()),
                 ("Usuarios", ft.Icons.PEOPLE_OUTLINE, ft.Icons.PEOPLE, lambda: VistaUsuarios(self).control()),
                 ("Ajustes", ft.Icons.SETTINGS_OUTLINED, ft.Icons.SETTINGS, lambda: VistaAjustes(self).control()),
             ]

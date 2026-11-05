@@ -150,6 +150,15 @@ class Devoluciones:
     def recientes(self, limite: int = 300) -> list[dict]:
         return self.fs.consultar(COL_DEV, orden=[("cargado_en", "DESCENDING")], limite=limite)
 
+    def migrar_service_interno(self) -> int:
+        """"Service Interno" ya no existe: pasa clasificación y condición a "Service". Devuelve cuántas cambió."""
+        cambiadas: set[str] = set()
+        for campo in ("clasificacion", "condicion"):
+            for d in self.fs.consultar(COL_DEV, filtros=[(campo, "EQUAL", "Service Interno")]):
+                self.actualizar(d["_id"], {campo: "Service"})
+                cambiadas.add(d["_id"])
+        return len(cambiadas)
+
     def borrar(self, numero: str, cantidad_fotos: int) -> None:
         for i in range(1, cantidad_fotos + 1):
             try:

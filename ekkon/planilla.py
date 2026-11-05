@@ -33,7 +33,12 @@ C_ESTADO1 = "Estado (1er reclamo)"
 C_MONTO = "Monto Reintegrado"
 C_MOVIMIENTO = "N° Movimiento"
 
-REEMPLAZABLES = {C_ESTADO1: {"pendiente"}}
+# Valores de la planilla que el programa puede reemplazar aunque la celda no esté vacía
+REEMPLAZABLES = {C_ESTADO1: {"pendiente"}, C_CLASIF: {"service interno"}, C_CONDICION: {"service interno"}}
+
+# Columnas donde el valor del programa es solo el inicial: si después cambia en la planilla
+# (Email enviado, Realizada) no es una diferencia para reportar
+SOLO_INICIAL = {C_TRANSF}
 
 ESTADO_A_PLANILLA = {
     "reclamado": "Pendiente",
@@ -159,11 +164,13 @@ def valores_de(dev: dict) -> dict:
                        ("condicion", C_CONDICION), ("clasificacion", C_CLASIF)):
         if dev.get(clave):
             v[col] = dev[clave]
-    final = settings.DEPOSITO_FINAL.get(dev.get("clasificacion", ""))
+    final = dev.get("deposito_final") or settings.DEPOSITO_FINAL.get(dev.get("clasificacion", ""))
     if final:
         v[C_DEP_FINAL] = final
     if dev.get("nc_realizada"):
         v[C_NDC] = "Si"
+        if dev.get("transferencia"):
+            v[C_TRANSF] = dev["transferencia"]
     if "reclamo" in dev:
         v[C_RECLAMO] = "si" if dev.get("reclamo") else "no"
     if dev.get("numero_mediacion"):
@@ -256,7 +263,7 @@ def planificar(hoja: Hoja, devoluciones: list[dict]) -> Plan:
             if vacia(actual) or normalizar(actual) in REEMPLAZABLES.get(col, ()):
                 plan.celdas.append((f"{letra_columna(i)}{numero}", para_escribir(col, val)))
                 plan.actualizadas.add(venta)
-            else:
+            elif col not in SOLO_INICIAL:
                 plan.conflictos.append((venta, col, actual, val))
     return plan
 
@@ -288,6 +295,7 @@ class ItemEmail:
 
 
 ESPERA_MOVIMIENTO = "a la espera de movimiento"
+DESTINOS_TRANSFERENCIA = {"podesta", "scrap"}
 
 
 def pendientes(hoja: Hoja, modelos: dict | None = None) -> list[ItemEmail]:
@@ -308,6 +316,30 @@ def pendientes(hoja: Hoja, modelos: dict | None = None) -> list[ItemEmail]:
             fila=hoja.numero_fila(i), venta=venta, sku=sku,
             producto=modelos.get(sku) or modelo(hoja.valor(i, C_ARTICULO)), clasificacion=clasif,
             destino=destino, fecha=fecha_de_serial(hoja.valor(i, C_FECHA_REV))))
+    return salida
+
+
+def enviados(hoja: Hoja, modelos: dict | None = None) -> list[ItemEmail]:
+    """Filas con Transferencia = "Email enviado" y destino Podestá o Scrap, más recientes primero.
+
+    Son las transferencias pedidas que falta llevar y marcar como Realizada.
+    """
+    modelos = modelos or {}
+    salida = []
+    for i in range(len(hoja.filas)):
+        venta = venta_de_celda(hoja.valor(i, C_VENTA))
+        if not venta or normalizar(hoja.valor(i, C_TRANSF)) != normalizar(EMAIL_ENVIADO):
+            continue
+        destino = str(hoja.valor(i, C_DEP_FINAL) or "").strip()
+        if normalizar(destino) not in DESTINOS_TRANSFERENCIA:
+            continue
+        sku = str(hoja.valor(i, C_SKU) or "").strip()
+        salida.append(ItemEmail(
+            fila=hoja.numero_fila(i), venta=venta, sku=sku,
+            producto=modelos.get(sku) or modelo(hoja.valor(i, C_ARTICULO)),
+            clasificacion=str(hoja.valor(i, C_CLASIF) or "").strip(), destino=destino,
+            fecha=fecha_de_serial(hoja.valor(i, C_FECHA_REV))))
+    salida.sort(key=lambda it: (it.fecha or dt.date.min, it.fila), reverse=True)
     return salida
 
 

@@ -1,7 +1,8 @@
-"""Email de solicitud de transferencia, armado desde la planilla.
+"""Transferencias armadas desde la planilla.
 
-Toma las filas con Transferencia = "A la espera de movimiento". El origen es siempre
-Service Podestá (al hacer la NC la unidad entra ahí); el destino sale de "Deposito final".
+1. Pedir: filas con Transferencia = "A la espera de movimiento" -> email -> "Email enviado".
+2. Llevar: filas con "Email enviado" (destino Podestá o Scrap) -> "Realizada".
+El origen es siempre Service Podestá (al hacer la NC la unidad entra ahí).
 """
 from __future__ import annotations
 
@@ -11,7 +12,7 @@ import flet as ft
 
 from .. import settings
 from ..firebase import FirebaseError
-from ..planilla import C_TRANSF, EMAIL_ENVIADO, email_transferencia, letra_columna, pendientes
+from ..planilla import C_TRANSF, EMAIL_ENVIADO, email_transferencia, enviados, letra_columna, pendientes
 from ..sheets import SheetsError
 from .comun import fecha_corta, seccion, tarjeta, titulo
 from .sincronizar import abrir_planilla
@@ -26,18 +27,28 @@ class VistaEmails:
         self.items: list = []
         self.marcados: set = set()
         self.panel = ft.Column(spacing=12)
+        self.enviados: list = []
+        self.marcados_env: set = set()
+        self.panel_env = ft.Column(spacing=12)
         self.estado = ft.Text("", color=ft.Colors.ON_SURFACE_VARIANT)
         self.progreso = ft.ProgressBar(visible=False)
 
     def control(self) -> ft.Control:
+        def pestania(texto, contenido):
+            return ft.Tab(text=texto, content=ft.Container(
+                ft.Column([contenido], scroll=ft.ScrollMode.AUTO, expand=True), padding=ft.padding.only(top=14)))
+
         vista = ft.Column([
-            ft.Row([titulo("Email de transferencia",
-                           f"Filas de la planilla con Transferencia = \"A la espera de movimiento\". "
-                           f"Origen: {settings.ORIGEN_TRANSFERENCIA}."),
+            ft.Row([titulo("Transferencias", f"Origen siempre {settings.ORIGEN_TRANSFERENCIA}. "
+                                             "Los datos salen de la planilla."),
                     ft.FilledTonalButton("Leer planilla", icon=ft.Icons.REFRESH, on_click=lambda _: self.cargar())],
                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-            self.progreso, self.estado, self.panel,
-        ], spacing=12, expand=True, scroll=ft.ScrollMode.AUTO)
+            self.progreso, self.estado,
+            ft.Tabs(selected_index=0, animation_duration=200, expand=True, tabs=[
+                pestania("1. Pedir transferencia (A la espera de movimiento)", self.panel),
+                pestania("2. Marcar realizada (Email enviado)", self.panel_env),
+            ]),
+        ], spacing=12, expand=True)
         self.cargar(actualizar=False)
         return vista
 
@@ -54,16 +65,22 @@ class VistaEmails:
         try:
             self.planilla = abrir_planilla(self.app)
             self.hoja = self.planilla.leer()
-            self.items = pendientes(self.hoja, self.app.config.get("modelos_por_sku") or {})
+            modelos = self.app.config.get("modelos_por_sku") or {}
+            self.items = pendientes(self.hoja, modelos)
             self.marcados = {it.fila for it in self.items}
-            self.estado.value = f"{len(self.items)} fila(s) a la espera de movimiento."
+            self.enviados = enviados(self.hoja, modelos)
+            self.marcados_env = set()
+            self.estado.value = (f"{len(self.items)} fila(s) a la espera de movimiento y {len(self.enviados)} "
+                                 "con el email enviado que falta marcar como realizada.")
             self.estado.color = ft.Colors.ON_SURFACE_VARIANT
         except (SheetsError, ValueError) as e:
             self.estado.value = str(e)
             self.estado.color = ft.Colors.ERROR
             self.items = []
+            self.enviados = []
         self.progreso.visible = False
         self._pintar()
+        self._pintar_enviados()
         self._update()
 
     def _recordar_modelos(self, items) -> None:
@@ -194,3 +211,65 @@ class VistaEmails:
         asunto, cuerpo = email_transferencia(self._seleccionados())
         asunto_txt.value = f"Asunto: {asunto}"
         vista_previa.value = cuerpo
+
+    # ------------------------------------------------------------ 2. marcar realizada
+
+    def _pintar_enviados(self) -> None:
+        if not self.enviados:
+            self.panel_env.controls = [tarjeta(ft.Row([ft.Icon(ft.Icons.INBOX, color=ft.Colors.OUTLINE),
+                                                       ft.Text("No hay transferencias con el email enviado.")]))]
+            return
+        contador = ft.Text()
+
+        def actualizar_contador():
+            contador.value = f"{len(self.marcados_env)} seleccionada(s)"
+
+        def marcar(fila, valor):
+            (self.marcados_env.add if valor else self.marcados_env.discard)(fila)
+            actualizar_contador()
+            self._update()
+
+        filas = [ft.DataRow([
+            ft.DataCell(ft.Checkbox(value=it.fila in self.marcados_env,
+                                    on_change=lambda e, f=it.fila: marcar(f, e.control.value))),
+            ft.DataCell(ft.Text(str(it.fila))),
+            ft.DataCell(ft.Text(fecha_corta(it.fecha.isoformat()) if it.fecha else "—")),
+            ft.DataCell(ft.Text(it.venta, selectable=True)),
+            ft.DataCell(ft.Text(it.sku or "—")),
+            ft.DataCell(ft.Text(it.producto, width=260, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)),
+            ft.DataCell(ft.Text(it.destino)),
+        ]) for it in self.enviados]
+        tabla = ft.DataTable(
+            columns=[ft.DataColumn(ft.Text(c)) for c in ("", "Fila", "Revisión", "Venta", "SKU", "Producto", "Destino")],
+            rows=filas, heading_row_height=38, data_row_min_height=40, data_row_max_height=46, column_spacing=18)
+
+        def realizada(_):
+            sel = [it for it in self.enviados if it.fila in self.marcados_env]
+            if not sel:
+                self.app.avisar("Tilde las transferencias que ya llevó.", error=True)
+                return
+            col = self.hoja.indice(C_TRANSF)
+
+            def hacer():
+                try:
+                    self.planilla.escribir([(f"{letra_columna(col)}{it.fila}", settings.TRANSF_REALIZADA)
+                                            for it in sel])
+                except SheetsError as e:
+                    self.app.avisar(str(e), error=True)
+                    return
+                self.app.avisar(f"Se marcó \"{settings.TRANSF_REALIZADA}\" en {len(sel)} fila(s).")
+                self.cargar()
+
+            self.app.confirmar("Marcar como realizada",
+                               f"En la columna Transferencia se reemplaza \"{EMAIL_ENVIADO}\" por "
+                               f"\"{settings.TRANSF_REALIZADA}\" en {len(sel)} fila(s). ¿Continuar?",
+                               hacer, "Marcar")
+
+        actualizar_contador()
+        self.panel_env.controls = [
+            ft.Text("Tilde las que ya llevó físicamente y toque \"Marcar como realizada\". "
+                    "Están ordenadas de la más reciente a la más vieja.", color=ft.Colors.ON_SURFACE_VARIANT),
+            ft.Row([ft.FilledButton("Marcar como realizada", icon=ft.Icons.TASK_ALT, on_click=realizada),
+                    contador], spacing=16),
+            tarjeta(ft.Column([ft.Row([tabla], scroll=ft.ScrollMode.AUTO)]), padding=8),
+        ]

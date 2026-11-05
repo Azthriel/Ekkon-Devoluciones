@@ -253,9 +253,17 @@ class VistaLista:
                            options=[ft.dropdown.Option(x) for x in settings.DEPOSITOS_ORIGEN], on_change=cambio)
 
     def _marcar_nc(self, d: dict) -> None:
+        clasif = d.get("clasificacion")
+        if not clasif:
+            self.app.avisar("La venta no tiene clasificación. Edítela antes de marcar la NC.", error=True)
+            return
+        transferencia = settings.transferencia_al_hacer_nc(clasif)
+        final = settings.DEPOSITO_FINAL.get(clasif, "Service Podesta")
         try:
-            self.app.devs.actualizar(d["numero_venta"], {"nc_realizada": True})
-            self.app.avisar(f"Venta {d['numero_venta']}: NC marcada como realizada.")
+            self.app.devs.actualizar(d["numero_venta"], {"nc_realizada": True, "transferencia": transferencia,
+                                                         "deposito_final": final})
+            self.app.avisar(f"Venta {d['numero_venta']}: NC realizada. En la planilla quedará "
+                            f"Transferencia \"{transferencia}\" y depósito final \"{final}\" al sincronizar.")
         except FirebaseError as e:
             self.app.manejar_error(e)
         self.recargar()

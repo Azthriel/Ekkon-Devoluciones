@@ -189,3 +189,49 @@ def test_cliente_aplica_plan():
     assert posts[1]["data"][0]["range"] == "'Devoluciones'!A6:X6"
     assert posts[1]["valueInputOption"] == "USER_ENTERED"
     assert any(d["range"] == "'Devoluciones'!G5" for d in posts[2]["data"])
+
+
+@pytest.mark.parametrize("clasif,transf,final", [
+    ("N", "A la espera de movimiento", "Podestá"),
+    ("Scrap", "A la espera de movimiento", "Scrap"),
+    ("Service", "Realizada", "Service Podesta"),
+    ("A", "Realizada", "Service Podesta"),
+    ("B", "Realizada", "Service Podesta"),
+    ("E", "Realizada", "Service Podesta"),
+])
+def test_reglas_al_marcar_nc(clasif, transf, final):
+    from ekkon import settings
+    assert settings.transferencia_al_hacer_nc(clasif) == transf
+    h = hoja_ejemplo()
+    d = dev("2000018604612862", clasificacion=clasif, nc_realizada=True,
+            transferencia=transf, deposito_final=settings.DEPOSITO_FINAL[clasif])
+    escritas = dict(P.planificar(h, [d]).celdas)
+    assert escritas["H5"] == "Si" and escritas["I5"] == transf and escritas["J5"] == final
+
+
+def test_transferencia_cambiada_en_planilla_no_es_diferencia():
+    h = hoja_ejemplo()   # fila 3: Transferencia "Realizada"
+    d = dev("2000018082198231", nc_realizada=True, transferencia="A la espera de movimiento")
+    plan = P.planificar(h, [d])
+    assert not any(c[1] == "Transferencia" for c in plan.conflictos)
+    assert "I3" not in dict(plan.celdas)
+
+
+def test_reemplaza_service_interno():
+    h = P.Hoja([ENCABEZADOS, fila(**{"N° Venta": "2000000000000009", "Clasificacion": "Service Interno",
+                                    "Condicion": "Service Interno"})])
+    d = dev("2000000000000009", clasificacion="Service", condicion="Service")
+    escritas = dict(P.planificar(h, [d]).celdas)
+    assert escritas["O2"] == "Service" and escritas["N2"] == "Service"
+
+
+def test_enviados_para_marcar_realizada():
+    h = P.Hoja([ENCABEZADOS,
+                fila(**{"N° Venta": "2000000000000001", "Transferencia": "Email enviado", "Deposito final": "Podestá",
+                        "Fecha revisión": P.serial(dt.date(2026, 10, 1))}),
+                fila(**{"N° Venta": "2000000000000002", "Transferencia": "Email enviado", "Deposito final": "Scrap",
+                        "Fecha revisión": P.serial(dt.date(2026, 11, 1))}),
+                fila(**{"N° Venta": "2000000000000003", "Transferencia": "Email enviado",
+                        "Deposito final": "Service Podesta"}),
+                fila(**{"N° Venta": "2000000000000004", "Transferencia": "Realizada", "Deposito final": "Podestá"})])
+    assert [i.venta[-1] for i in P.enviados(h)] == ["2", "1"]

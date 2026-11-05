@@ -57,6 +57,15 @@ DEPOSITO_FINAL = {
 # Al hacer la NC la unidad entra en Service Podestá: es siempre el origen de las transferencias
 ORIGEN_TRANSFERENCIA = "Service Podestá"
 
+# Columna "Transferencia" al marcar la NC: N y Scrap se transfieren; el resto queda en Service Podesta
+TRANSF_ESPERA = "A la espera de movimiento"
+TRANSF_REALIZADA = "Realizada"
+TRANSFERENCIA_AL_HACER_NC = {"N": TRANSF_ESPERA, "Scrap": TRANSF_ESPERA}
+
+
+def transferencia_al_hacer_nc(clasificacion: str) -> str:
+    return TRANSFERENCIA_AL_HACER_NC.get(clasificacion or "", TRANSF_REALIZADA)
+
 # Planilla de Google Sheets
 HOJA_PLANILLA = "Devoluciones"
 
