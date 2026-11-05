@@ -94,22 +94,37 @@ def test_fila_nueva():
     assert valores[ENCABEZADOS.index("SKU")] == "ABC-0001"
 
 
-def test_pendientes_y_emails():
-    h = hoja_ejemplo()
-    transf = P.pendientes(h, "transferencia")
-    assert [i.venta for i in transf] == ["2000014464776957"]
-    outlet = P.pendientes(h, "outlet")
-    assert [i.sku for i in outlet] == ["TSE-9785"]
-    asunto, cuerpo = P.email_transferencia(transf + transf)
-    assert "Service Podestá" in asunto
-    assert "RBXH0014 | KB-MH52D | 2" in cuerpo
-    assert outlet[0].sku_outlet == "ZB-TSE-9785"
-    _, cuerpo = P.email_outlet(outlet)
-    assert "TSE-9785 | KB-XS | B | ZB-TSE-9785 | 1" in cuerpo
-    assert "Alta: SKU outlet en Outlet Podestá" in cuerpo
+def test_pendientes_y_email_transferencia():
+    h = P.Hoja([ENCABEZADOS,
+                fila(**{"N° Venta": "2000000000000001", "SKU": "RLA-0045", "Articulo": "Aspiradora (KB-VC60LG)",
+                        "Transferencia": "A la espera de movimiento", "Deposito final": "Podestá",
+                        "Clasificacion": "N"}),
+                fila(**{"N° Venta": "2000000000000002", "SKU": "FN1-0049", "Articulo": "Pulverizador (KB-PVC10)",
+                        "Transferencia": "A la espera de movimiento ", "Clasificacion": "N"}),
+                fila(**{"N° Venta": "2000000000000003", "SKU": "FN1-0049", "Articulo": "Pulverizador (KB-PVC10)",
+                        "Transferencia": "a la espera de movimiento", "Deposito final": "Podestá"}),
+                fila(**{"N° Venta": "2000000000000004", "SKU": "XXX-1", "Transferencia": "Email enviado",
+                        "NdC": "Si", "Deposito final": "Podestá"}),
+                fila(**{"N° Venta": "2000000000000005", "SKU": "XXX-2", "NdC": "Si", "Deposito final": "Podestá"})])
+    items = P.pendientes(h)
+    assert [i.venta[-1] for i in items] == ["1", "2", "3"]       # solo "A la espera de movimiento"
+    assert items[1].destino == "Podestá"                          # sin Deposito final: se deduce de la N
+    asunto, cuerpo = P.email_transferencia(items)
+    assert asunto == "Solicitud de transferencia - Service Podestá a Podestá"
+    assert "Origen: Service Podestá\nDestino: Podestá" in cuerpo
+    assert "RLA-0045 | KB-VC60LG | 1" in cuerpo and "FN1-0049 | KB-PVC10 | 2" in cuerpo
 
 
-def test_outlet_queda_en_service_podesta():
+def test_email_con_varios_destinos():
+    a = P.ItemEmail(1, "1", "S1", "KB-A", "N", "Podestá", None)
+    b = P.ItemEmail(2, "2", "S2", "KB-B", "Scrap", "Scrap", None)
+    asunto, cuerpo = P.email_transferencia([a, b])
+    assert asunto == "Solicitud de transferencia - Service Podestá"
+    assert cuerpo.count("Origen: Service Podestá") == 2
+    assert "Destino: Scrap" in cuerpo
+
+
+def test_abc_quedan_en_service_podesta():
     h = hoja_ejemplo()
     plan = P.planificar(h, [dev("2000018604612862", clasificacion="B", condicion="Con uso")])
     assert dict(plan.celdas)["J5"] == "Service Podesta"

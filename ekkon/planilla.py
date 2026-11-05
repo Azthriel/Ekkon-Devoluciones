@@ -282,13 +282,16 @@ class ItemEmail:
     sku: str
     producto: str
     clasificacion: str
+    destino: str
     fecha: dt.date | None
-    sku_outlet: str = ""
     editado: bool = False
 
 
-def pendientes(hoja: Hoja, tipo: str, modelos: dict | None = None) -> list[ItemEmail]:
-    """tipo: 'transferencia' (NC de productos nuevos) u 'outlet' (NC de A, B y C).
+ESPERA_MOVIMIENTO = "a la espera de movimiento"
+
+
+def pendientes(hoja: Hoja, modelos: dict | None = None) -> list[ItemEmail]:
+    """Filas con Transferencia = "A la espera de movimiento".
 
     modelos: SKU -> modelo guardado (ej. "RLA-0045" -> "KB-VC60LG"), para títulos sin modelo.
     """
@@ -296,26 +299,15 @@ def pendientes(hoja: Hoja, tipo: str, modelos: dict | None = None) -> list[ItemE
     salida = []
     for i in range(len(hoja.filas)):
         venta = venta_de_celda(hoja.valor(i, C_VENTA))
-        if not venta:
-            continue
-        if normalizar(hoja.valor(i, C_NDC)) != "si" or not vacia(hoja.valor(i, C_TRANSF)):
+        if not venta or normalizar(hoja.valor(i, C_TRANSF)) != ESPERA_MOVIMIENTO:
             continue
         clasif = str(hoja.valor(i, C_CLASIF) or "").strip()
-        final = normalizar(hoja.valor(i, C_DEP_FINAL))
-        if tipo == "transferencia":
-            if not (final == "podesta" or (not final and clasif == "N")):
-                continue
-        elif tipo == "outlet":
-            if clasif.upper() not in settings.CLASIFICACIONES_OUTLET:
-                continue
-        else:
-            raise ValueError(tipo)
         sku = str(hoja.valor(i, C_SKU) or "").strip()
+        destino = str(hoja.valor(i, C_DEP_FINAL) or "").strip() or settings.DEPOSITO_FINAL.get(clasif, "")
         salida.append(ItemEmail(
             fila=hoja.numero_fila(i), venta=venta, sku=sku,
             producto=modelos.get(sku) or modelo(hoja.valor(i, C_ARTICULO)), clasificacion=clasif,
-            fecha=fecha_de_serial(hoja.valor(i, C_FECHA_REV)),
-            sku_outlet=settings.sku_outlet(sku, clasif) if tipo == "outlet" else ""))
+            destino=destino, fecha=fecha_de_serial(hoja.valor(i, C_FECHA_REV))))
     return salida
 
 
@@ -331,45 +323,28 @@ def _agrupar(items: list[ItemEmail], clave) -> list[tuple[ItemEmail, int]]:
 
 
 def email_transferencia(items: list[ItemEmail]) -> tuple[str, str]:
-    asunto = "Solicitud de transferencia - Service Podestá a Podestá"
-    lineas = [f"{it.sku or '(sin SKU)'} | {it.producto} | {cant}"
-              for it, cant in _agrupar(items, lambda x: (x.sku, x.producto))]
+    """Email de transferencia. Origen siempre Service Podestá; un bloque por cada destino."""
+    origen = settings.ORIGEN_TRANSFERENCIA
+    destinos: dict[str, list[ItemEmail]] = {}
+    for it in items:
+        destinos.setdefault(it.destino or "(completar destino)", []).append(it)
+    if len(destinos) == 1:
+        asunto = f"Solicitud de transferencia - {origen} a {next(iter(destinos))}"
+    else:
+        asunto = f"Solicitud de transferencia - {origen}"
+    bloques: list[str] = []
+    for destino, grupo in destinos.items():
+        bloques += [f"Origen: {origen}", f"Destino: {destino}", "", "SKU | Producto | Cant."]
+        bloques += [f"{it.sku or '(sin SKU)'} | {it.producto} | {cant}"
+                    for it, cant in _agrupar(grupo, lambda x: (x.sku, x.producto))]
+        bloques.append("")
     cuerpo = "\n".join([
         "Buenos días,",
         "",
         "Solicito realizar la siguiente transferencia de mercadería de notas de crédito:",
         "",
-        "Origen: Service Podestá",
-        "Destino: Podestá",
-        "",
-        "SKU | Producto | Cant.",
-        *lineas,
-        "",
+        *bloques,
         "Quedo atento a la confirmación de la transferencia.",
-        "",
-        "Saludos.",
-    ])
-    return asunto, cuerpo
-
-
-def email_outlet(items: list[ItemEmail]) -> tuple[str, str]:
-    asunto = "Solicitud de baja y alta de SKU - Service Podestá a Outlet Podestá"
-    lineas = [f"{it.sku or '(sin SKU)'} | {it.producto} | {it.clasificacion} | "
-              f"{it.sku_outlet or '(completar)'} | {cant}"
-              for it, cant in _agrupar(items, lambda x: (x.sku, x.producto, x.clasificacion, x.sku_outlet))]
-    cuerpo = "\n".join([
-        "Buenos días,",
-        "",
-        "Solicito realizar el siguiente movimiento de mercadería de notas de crédito, correspondiente a "
-        "productos clasificados como outlet:",
-        "",
-        "Baja: SKU nuevo en Service Podestá",
-        "Alta: SKU outlet en Outlet Podestá",
-        "",
-        "SKU nuevo | Producto | Clasif. | SKU outlet | Cant.",
-        *lineas,
-        "",
-        "Quedo atento a la confirmación de los movimientos.",
         "",
         "Saludos.",
     ])

@@ -15,8 +15,9 @@ Programa de Windows para cargar y gestionar las devoluciones de Mercado Libre.
 - Bloqueo de versiones viejas desde *Ajustes* (versión mínima permitida).
 - **Planilla (0.2)**: *Sincronizar planilla* completa la planilla de Google Sheets con una cuenta de servicio.
   Solo completa celdas vacías y agrega ventas nuevas; nunca pisa lo escrito a mano (salvo *Pendiente* → resultado).
-- **Emails (0.2)**: arma la solicitud de transferencia Service Podestá → Podestá (NC de productos N) y la de
-  baja SKU nuevo / alta SKU outlet (NC de A, B y C), con *Abrir en Gmail* y *Marcar como enviado*.
+- **Emails**: arma la solicitud de transferencia con las filas que tienen Transferencia = "A la espera de
+  movimiento". Origen siempre Service Podestá (ahí entra la unidad al hacer la NC); destino según "Deposito final".
+  Incluye *Abrir en Gmail* y *Marcar como enviado*.
 
 Todo funciona en el plan gratuito de Firebase (Spark): Auth + Firestore. Las fotos se comprimen
 (≤ 850 KB) y se guardan dentro de Firestore, porque Cloud Storage exige el plan Blaze desde febrero de 2026.

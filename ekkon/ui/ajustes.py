@@ -24,9 +24,6 @@ class VistaAjustes:
         para_transf = ft.TextField(label="Destinatarios del email de transferencia",
                                    value=c.get("email_transferencia_para", ""),
                                    helper_text="Separados por coma. Ej.: logistica@…, service@…")
-        para_outlet = ft.TextField(label="Destinatarios del email de baja/alta outlet",
-                                   value=c.get("email_outlet_para", ""),
-                                   helper_text="Separados por coma.")
         ultima = ft.TextField(label="Última versión publicada", value=c.get("ultima_version", ""), width=260,
                               hint_text=VERSION)
         minima = ft.TextField(label="Versión mínima permitida", value=c.get("version_minima", ""), width=260,
@@ -77,7 +74,6 @@ class VistaAjustes:
                 return
             campos = {"claude_project_url": claude.value.strip(), "planilla_url": link,
                       "email_transferencia_para": para_transf.value.strip(),
-                      "email_outlet_para": para_outlet.value.strip(),
                       "ultima_version": ultima.value.strip(), "version_minima": minima.value.strip(),
                       "url_descarga": descarga.value.strip()}
             try:
@@ -103,7 +99,7 @@ class VistaAjustes:
                         ft.OutlinedButton("Probar conexión", icon=ft.Icons.WIFI_TETHERING, on_click=probar),
                         estado_clave], wrap=True, spacing=12),
             ], spacing=14)),
-            tarjeta(ft.Column([seccion("Emails"), para_transf, para_outlet], spacing=14)),
+            tarjeta(ft.Column([seccion("Emails"), para_transf], spacing=14)),
             tarjeta(ft.Column([seccion("Actualizaciones"), ft.Row([ultima, minima], spacing=16), descarga],
                               spacing=14)),
             ft.Row([ft.FilledButton("Guardar", icon=ft.Icons.SAVE, on_click=guardar, height=46)]),

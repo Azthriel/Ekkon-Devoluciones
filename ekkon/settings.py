@@ -27,20 +27,19 @@ CLASIFICACIONES = [
     ("A", "A — Outlet"),
     ("B", "B — Outlet"),
     ("C", "C — Outlet"),
-    ("D", "D — Service externo"),
-    ("E", "E — Service externo"),
-    ("Service", "Service — Service externo"),
-    ("Service Interno", "Service Interno — Se repara acá"),
+    ("D", "D — Service (se repara acá)"),
+    ("E", "E — Service (se repara acá)"),
+    ("Service", "Service — Se repara acá"),
     ("Scrap", "Scrap — Irreparable / descarte"),
 ]
 
-CONDICIONES = ["buena", "caja rota", "Con uso", "Service", "Service Interno",
-               "Extraviado", "Irreparable", "Objeto distinto"]
+# "Service Interno" ya no se usa: el service externo cerró y todo el service se hace acá
+CONDICIONES = ["buena", "caja rota", "Con uso", "Service", "Extraviado", "Irreparable", "Objeto distinto"]
 
 # Condición que se sugiere al elegir la clasificación (Alan puede cambiarla)
 CONDICION_SUGERIDA = {
     "N": "buena", "A": "caja rota", "B": "Con uso", "C": "Con uso", "D": "Service", "E": "Service",
-    "Service": "Service", "Service Interno": "Service Interno", "Scrap": "Irreparable",
+    "Service": "Service", "Scrap": "Irreparable",
 }
 
 MOTIVOS = ["no lo quiere", "cancelado", "no funciona", "Roto", "Extraviado",
@@ -49,22 +48,14 @@ MOTIVOS = ["no lo quiere", "cancelado", "no funciona", "Roto", "Extraviado",
 
 DEPOSITOS_ORIGEN = ["Podesta", "Full", "LP"]
 
-# Depósito final que se escribe en la planilla según la clasificación.
-# A, B y C quedan en Service Podesta en la planilla; el paso a Outlet Podesta se pide por email.
+# Depósito final que se escribe en la planilla según la clasificación
 DEPOSITO_FINAL = {
     "N": "Podestá", "A": "Service Podesta", "B": "Service Podesta", "C": "Service Podesta",
-    "D": "Service Podesta", "E": "Service Podesta", "Service": "Service Podesta",
-    "Service Interno": "Service Podesta", "Scrap": "Scrap",
+    "D": "Service Podesta", "E": "Service Podesta", "Service": "Service Podesta", "Scrap": "Scrap",
 }
-CLASIFICACIONES_OUTLET = ("A", "B", "C")
 
-
-def sku_outlet(sku: str, clasificacion: str) -> str:
-    """SKU de outlet: Z + clasificación + guion + SKU nuevo (ej. B y TSE-9785 -> ZB-TSE-9785)."""
-    sku, clasif = (sku or "").strip(), (clasificacion or "").strip().upper()
-    if not sku or clasif not in CLASIFICACIONES_OUTLET:
-        return ""
-    return f"Z{clasif}-{sku}"
+# Al hacer la NC la unidad entra en Service Podestá: es siempre el origen de las transferencias
+ORIGEN_TRANSFERENCIA = "Service Podestá"
 
 # Planilla de Google Sheets
 HOJA_PLANILLA = "Devoluciones"

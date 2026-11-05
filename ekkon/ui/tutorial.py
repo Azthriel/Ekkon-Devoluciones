@@ -25,8 +25,8 @@ PASOS_CARGA = [
      ["En \"Motivo\" elija el motivo de la devolución tal como figura en Mercado Libre.",
       "Si no está seguro, mire la venta en Mercado Libre: el motivo figura en la devolución."]),
     (ft.Icons.CATEGORY, "4. Clasificación y condición",
-     ["Clasificación: N vuelve a stock. A, B y C van a outlet. D, E y Service van al service externo. "
-      "Service Interno se repara acá. Scrap es descarte.",
+     ["Clasificación: N vuelve a stock. A, B y C van a outlet. D, E y Service se reparan acá. "
+      "Scrap es descarte.",
       "Condición: el programa la sugiere al elegir la clasificación, pero no siempre acierta. "
       "Revísela: buena, caja rota, con uso, service, irreparable, etc.",
       "Si elige N, el reclamo se desactiva solo. Si corresponde reclamar igual, vuelva a activarlo."]),
@@ -55,7 +55,7 @@ PASOS_ADMIN = [
     (ft.Icons.TABLE_CHART, "Planilla y emails",
      ["En \"Devoluciones\", el botón \"Sincronizar planilla\" completa la planilla de Google Sheets.",
       "Solo completa celdas vacías y agrega las ventas que faltan. Nunca pisa lo que usted escribió.",
-      "En \"Emails\" se arman las solicitudes de transferencia y de baja/alta outlet con las NC realizadas."]),
+      "En \"Emails\" se arma la solicitud de transferencia con las filas \"A la espera de movimiento\"."]),
     (ft.Icons.SETTINGS, "Ajustes",
      ["Cargue el link del proyecto de Claude, el link de la planilla, la clave de la cuenta de servicio "
       "y los destinatarios de los emails.",
