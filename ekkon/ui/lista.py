@@ -143,7 +143,7 @@ class VistaLista:
         if not d.get("producto"):
             # Cargada antes de importar el informe: se muestran los datos del informe igual
             try:
-                v = self.app.indice.venta(d.get("numero_venta", ""))
+                v = self.app.indice.buscar(d.get("numero_venta", "")).venta
             except FirebaseError:
                 v = None
             if v:

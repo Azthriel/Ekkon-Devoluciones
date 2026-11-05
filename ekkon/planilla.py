@@ -260,6 +260,10 @@ class Plan:
     carritos: list[tuple[str, str, list[str]]] = field(default_factory=list)
     # Devoluciones (id del documento) que se escriben por primera vez: se les guarda la fecha
     planilla_en: list[str] = field(default_factory=list)
+    # La misma venta cargada dos veces en el programa: (venta, doc que se usa, doc repetido)
+    duplicadas: list[tuple[str, str, str]] = field(default_factory=list)
+    # La misma venta en varias filas de la planilla: (venta, [filas])
+    repetidas_en_planilla: list[tuple[str, list[int]]] = field(default_factory=list)
 
     @property
     def vacio(self) -> bool:
@@ -303,18 +307,27 @@ def planificar(hoja: Hoja, devoluciones: list[dict], ventas: dict | None = None,
     siguiente = hoja.numero_fila(ultima + 1)
     ancho = len(hoja.encabezados)
     i_venta = hoja.indice(C_VENTA)
-    ordenadas = sorted(devoluciones, key=lambda d: d.get("cargado_en") or dt.datetime.min.replace(
-        tzinfo=dt.timezone.utc))
+    def resolver(dev):
+        venta = dev.get("numero_venta") or ""
+        if venta and venta not in ventas and len(por_carrito.get(venta, [])) == 1:
+            # Devolución vieja cargada con el ID Carrito: en la planilla va el Venta #
+            return venta, por_carrito[venta][0]
+        return "", venta
+
+    minimo = dt.datetime.min.replace(tzinfo=dt.timezone.utc)
+    # Primero las que ya están guardadas con el Venta #: si la misma venta está dos veces, gana esa
+    ordenadas = sorted(devoluciones, key=lambda d: (bool(resolver(d)[0]), d.get("cargado_en") or minimo))
     tocadas: set[int] = set()
+    vistas: dict[str, str] = {}
     for dev in ordenadas:
-        venta = dev.get("numero_venta")
+        carrito, venta = resolver(dev)
         if not venta:
             continue
-        doc_id = dev.get("_id") or venta
-        carrito = ""
-        if venta not in ventas and len(por_carrito.get(venta, [])) == 1:
-            # Devolución vieja cargada con el ID Carrito: en la planilla va el Venta #
-            carrito, venta = venta, por_carrito[venta][0]
+        doc_id = dev.get("_id") or dev.get("numero_venta")
+        if venta in vistas:
+            plan.duplicadas.append((venta, vistas[venta], doc_id))
+            continue
+        vistas[venta] = doc_id
         valores = valores_de(dev, hoy)
         valores[C_VENTA] = venta
         info = ventas.get(venta)
@@ -352,6 +365,13 @@ def planificar(hoja: Hoja, devoluciones: list[dict], ventas: dict | None = None,
         tocadas.add(fila0)
         _completar_fila(plan, hoja, fila0, valores, venta, reportar=True, pisar=pisar)
         _completar_fila(plan, hoja, fila0, informe, venta, reportar=False)
+
+    filas_por_venta: dict[str, list[int]] = {}
+    for fila0 in range(len(hoja.filas)):
+        numero = venta_de_celda(hoja.valor(fila0, C_VENTA))
+        if numero:
+            filas_por_venta.setdefault(numero, []).append(hoja.numero_fila(fila0))
+    plan.repetidas_en_planilla = [(v, f) for v, f in filas_por_venta.items() if len(f) > 1]
 
     if ventas:
         # Filas cargadas a mano: se completan con el informe y se detectan los ID Carrito

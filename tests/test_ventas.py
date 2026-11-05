@@ -102,3 +102,20 @@ def test_devolucion_vieja_cargada_con_carrito():
     h = P.Hoja([ENCABEZADOS])
     plan = P.planificar(h, [dev("2000014609910837")], cargar())
     assert plan.filas_nuevas[0][1][4] == "'2000018016486734"
+
+
+def test_misma_venta_cargada_dos_veces_escribe_una_sola_fila():
+    from test_planilla import ENCABEZADOS, dev
+    h = P.Hoja([ENCABEZADOS])
+    devs = [dev("2000014609910837", _id="2000014609910837"),      # cargada con el carrito
+            dev("2000018016486734", _id="2000018016486734")]      # la misma, con el Venta #
+    plan = P.planificar(h, devs, cargar())
+    assert len(plan.filas_nuevas) == 1
+    assert plan.duplicadas == [("2000018016486734", "2000018016486734", "2000014609910837")]
+
+
+def test_avisa_ventas_repetidas_en_la_planilla():
+    from test_planilla import ENCABEZADOS, fila
+    h = P.Hoja([ENCABEZADOS, fila(**{"N° Venta": "2000019107329828"}), fila(**{"N° Venta": "'2000019107329828"}),
+                fila(**{"N° Venta": "2000019107329000"})])
+    assert P.planificar(h, []).repetidas_en_planilla == [("2000019107329828", [2, 3])]

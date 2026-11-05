@@ -19,6 +19,9 @@ def sincronizar(app, al_terminar=None) -> None:
     espera = ft.AlertDialog(modal=True, content=ft.Row([ft.ProgressRing(), ft.Text("Leyendo la planilla y el informe…")],
                                                        tight=True, spacing=16))
     page.open(espera)
+    # Si se están corrigiendo devoluciones en segundo plano, espera a que terminen
+    with app.candado:
+        pass
     try:
         planilla = abrir_planilla(app)
         hoja = planilla.leer()
@@ -60,6 +63,16 @@ def sincronizar(app, al_terminar=None) -> None:
             detalle = f"→ Venta # {vs[0]}" if len(vs) == 1 else f"→ carrito con {len(vs)} ventas, corregir a mano"
             lineas.append(ft.Text(f"   {a1}: {carrito} {detalle}", size=12))
         lineas.append(corregir)
+    if plan.duplicadas:
+        lineas.append(ft.Text("Ventas cargadas dos veces en el programa (se escribe una sola fila):",
+                              weight=ft.FontWeight.W_600, color=ft.Colors.AMBER_800))
+        for venta, usada, repetida in plan.duplicadas[:20]:
+            lineas.append(ft.Text(f"   Venta # {venta}: se usa la carga {usada}; sobra la carga {repetida}.", size=12))
+    if plan.repetidas_en_planilla:
+        lineas.append(ft.Text("Ventas que aparecen más de una vez en la planilla (borre la fila que sobra):",
+                              weight=ft.FontWeight.W_600, color=ft.Colors.AMBER_800))
+        for venta, filas in plan.repetidas_en_planilla[:20]:
+            lineas.append(ft.Text(f"   {venta}: filas {', '.join(map(str, filas))}", size=12))
     if plan.sin_columna:
         lineas.append(ft.Text("No encontré estas columnas y se omiten: " + ", ".join(sorted(plan.sin_columna)),
                               color=ft.Colors.ERROR))
@@ -91,6 +104,14 @@ def sincronizar(app, al_terminar=None) -> None:
                 app.devs.actualizar(doc_id, {"planilla_en": hoy})
             except FirebaseError:
                 pass
+        # Lo que se completó en la planilla con el informe también queda en el programa
+        for d in devoluciones:
+            v = ventas.get(d.get("numero_venta", ""))
+            if v and not d.get("producto"):
+                try:
+                    app.devs.actualizar(d["numero_venta"], app.completar_desde_informe(d, v))
+                except FirebaseError:
+                    pass
         extra = f" y {len(correcciones)} N° Venta corregido(s)" if correcciones and corregir.value else ""
         app.avisar(f"Planilla actualizada: {len(plan.filas_nuevas)} fila(s) nueva(s), "
                    f"{len(plan.celdas)} celda(s) completada(s){extra}.")

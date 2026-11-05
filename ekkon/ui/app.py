@@ -32,6 +32,8 @@ class App:
         self.indice = Indice(self.fs)
         self.selector_fotos = ft.FilePicker()
         self._vigilante: threading.Thread | None = None
+        # La sincronización espera a que terminen las correcciones automáticas (evita filas repetidas)
+        self.candado = threading.Lock()
         self._seccion_actual = 0
 
     # ------------------------------------------------------------ sesión
@@ -126,14 +128,31 @@ class App:
             threading.Thread(target=self._migraciones, daemon=True).start()
 
     def _migraciones(self) -> None:
+        with self.candado:
+            cambios = self._migrar()
+        if cambios and self._seccion_actual in (1, 2):
+            try:
+                self.mostrar_shell(self._seccion_actual)
+            except Exception:  # noqa: BLE001
+                pass
+
+    def completar_desde_informe(self, d: dict, v) -> dict:
+        extra = {"producto": v.producto, "fecha_venta": v.fecha.isoformat() if v.fecha else "",
+                 "sucursal": v.sucursal, "pedido": v.pedido, "carrito": v.carrito, "precio_unitario": v.precio}
+        if not d.get("codigo_producto") and v.codigo:
+            extra["codigo_producto"] = v.codigo
+        return extra
+
+    def _migrar(self) -> int:
+        cambios = 0
         try:
             n = self.devs.migrar_service_interno()
             if n:
                 self.avisar(f"Se cambió \"Service Interno\" por \"Service\" en {n} devolución(es).")
-            # Devoluciones cargadas con el ID Carrito en versiones anteriores: pasan al Venta #
-            movidas = 0
-            # y las que se cargaron antes de importar el informe reciben producto, pedido, fecha, etc.
-            completadas = 0
+            cambios += n
+            # Devoluciones cargadas con el ID Carrito en versiones anteriores: pasan al Venta #,
+            # y las que se cargaron antes de importar el informe reciben producto, SKU, pedido, fecha, etc.
+            movidas, completadas, repetidas = 0, 0, []
             for d in self.devs.recientes(1000):
                 if d.get("producto"):
                     continue
@@ -141,23 +160,27 @@ class App:
                 if not r.venta:
                     continue
                 v = r.venta
-                extra = {"producto": v.producto, "fecha_venta": v.fecha.isoformat() if v.fecha else "",
-                         "sucursal": v.sucursal, "pedido": v.pedido, "carrito": v.carrito,
-                         "precio_unitario": v.precio}
-                if not d.get("codigo_producto") and v.codigo:
-                    extra["codigo_producto"] = v.codigo
+                extra = self.completar_desde_informe(d, v)
                 if r.tipo == "carrito":
                     if self.devs.mover(d["numero_venta"], v.venta, extra):
                         movidas += 1
+                    else:
+                        repetidas.append((d["numero_venta"], v.venta))
                 else:
                     self.devs.actualizar(d["numero_venta"], extra)
                     completadas += 1
+            cambios += movidas + completadas
             if movidas:
                 self.avisar(f"{movidas} devolución(es) cargadas con el ID Carrito pasaron a su Venta #.")
             if completadas:
-                self.avisar(f"Se completaron producto, pedido y fecha de venta en {completadas} devolución(es).")
+                self.avisar(f"Se completaron producto, SKU, pedido y fecha de venta en {completadas} devolución(es).")
+            if repetidas:
+                detalle = "; ".join(f"carrito {c} = venta {v}" for c, v in repetidas)
+                self.avisar(f"Hay devoluciones cargadas dos veces (con el ID Carrito y con el Venta #): {detalle}. "
+                            "Revise y borre la que sobra.", error=True)
         except FirebaseError:
-            return
+            pass
+        return cambios
 
     def salir(self, mensaje: str | None = None) -> None:
         local.borrar_sesion()
