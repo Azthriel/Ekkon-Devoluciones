@@ -107,7 +107,7 @@ def sincronizar(app, al_terminar=None) -> None:
         # Lo que se completó en la planilla con el informe también queda en el programa
         for d in devoluciones:
             v = ventas.get(d.get("numero_venta", ""))
-            if v and not d.get("producto"):
+            if v and not (d.get("producto") and d.get("deposito_origen")):
                 try:
                     app.devs.actualizar(d["numero_venta"], app.completar_desde_informe(d, v))
                 except FirebaseError:

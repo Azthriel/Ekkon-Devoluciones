@@ -141,6 +141,8 @@ class App:
                  "sucursal": v.sucursal, "pedido": v.pedido, "carrito": v.carrito, "precio_unitario": v.precio}
         if not d.get("codigo_producto") and v.codigo:
             extra["codigo_producto"] = v.codigo
+        if v.deposito:
+            extra["deposito_origen"] = v.deposito   # la Sucursal del informe es el depósito de origen
         return extra
 
     def _migrar(self) -> int:
@@ -154,7 +156,7 @@ class App:
             # y las que se cargaron antes de importar el informe reciben producto, SKU, pedido, fecha, etc.
             movidas, completadas, repetidas = 0, 0, []
             for d in self.devs.recientes(1000):
-                if d.get("producto"):
+                if d.get("producto") and d.get("deposito_origen"):
                     continue
                 r = self.indice.buscar(d["numero_venta"])
                 if not r.venta:

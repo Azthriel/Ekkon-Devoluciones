@@ -411,6 +411,8 @@ class VistaCarga:
         extra = {"deposito_origen": self.deposito.value} if self.app.es_admin and self.deposito.value else {}
         v = self.venta_info
         if v and v.venta == numero:
+            if v.deposito:
+                extra["deposito_origen"] = v.deposito
             extra |= {"producto": v.producto, "fecha_venta": v.fecha.isoformat() if v.fecha else "",
                       "sucursal": v.sucursal, "pedido": v.pedido, "carrito": v.carrito,
                       "precio_unitario": v.precio}

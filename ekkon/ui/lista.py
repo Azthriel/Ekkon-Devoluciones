@@ -140,7 +140,7 @@ class VistaLista:
         return self.app.es_admin or d.get("estado") in settings.ESTADOS_EDITABLES_CARGA
 
     def abrir_detalle(self, d: dict) -> None:
-        if not d.get("producto"):
+        if not (d.get("producto") and d.get("deposito_origen")):
             # Cargada antes de importar el informe: se muestran los datos del informe igual
             try:
                 v = self.app.indice.buscar(d.get("numero_venta", "")).venta
@@ -150,6 +150,8 @@ class VistaLista:
                 d = dict(d)
                 d.update({"producto": v.producto, "pedido": v.pedido, "carrito": v.carrito,
                           "fecha_venta": v.fecha.isoformat() if v.fecha else ""})
+                if not d.get("deposito_origen") and v.deposito:
+                    d["deposito_origen"] = v.deposito
                 d.setdefault("codigo_producto", v.codigo)
                 if not d.get("codigo_producto"):
                     d["codigo_producto"] = v.codigo
