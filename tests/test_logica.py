@@ -70,3 +70,14 @@ def test_guia_mercadolibre():
     g = guia_mercadolibre({"reclamo": True, "motivo": "no lo quiere", "condicion": "caja rota",
                            "descripcion": "caja rota"})
     assert g["opcion"] is None and any("consulte" in p for p in g["pasos"])
+
+
+def test_importes_y_numeros_pegados():
+    from ekkon.datos import importe, solo_digitos
+    assert importe("$ 15.190,50") == 15190.50
+    assert importe("15190,5") == 15190.5
+    assert importe("81665.00") == 81665.0
+    assert importe("15.190") == 15190.0
+    assert importe("1.234.567") == 1234567.0
+    assert importe("abc") is None
+    assert solo_digitos(" 5562121277\n") == "5562121277"

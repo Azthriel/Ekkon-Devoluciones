@@ -8,7 +8,7 @@ import flet as ft
 from ..local import abrir_url
 
 from .. import local, settings
-from ..datos import descripcion_clasificacion, guia_mercadolibre
+from ..datos import descripcion_clasificacion, guia_mercadolibre, importe, solo_digitos
 from ..firebase import FirebaseError
 from ..fotos import miniatura_b64
 from .comun import chip_estado, fecha_corta, hoy_iso, seccion, tarjeta, titulo
@@ -385,17 +385,14 @@ class VistaLista:
         actual = d.get("costo_envio")
         campo = ft.TextField(label="Costo de envío", prefix_text="$ ", autofocus=True, width=260,
                              value="" if actual is None else f"{actual:.2f}".replace(".", ","),
-                             input_filter=ft.InputFilter(r"[0-9.,]"),
                              helper_text="Ponga 0 si no tuvo costo de envío.")
         error = ft.Text("", color=ft.Colors.ERROR, visible=False)
         dlg = ft.AlertDialog(modal=True, title=ft.Text(f"Costo de envío — {d['numero_venta']}"),
                              content=ft.Container(ft.Column([campo, error], tight=True), width=420))
 
         def guardar(_=None):
-            texto = (campo.value or "").replace(".", "").replace(",", ".").strip()
-            try:
-                valor = float(texto)
-            except ValueError:
+            valor = importe(campo.value)
+            if valor is None:
                 error.value, error.visible = "Ingrese un importe.", True
                 self.page.update()
                 return
@@ -431,8 +428,9 @@ class VistaLista:
         self._reabrir(d)
 
     def _reclamo_enviado(self, d: dict) -> None:
+        # Sin filtro de teclado: el filtro hacía fallar el pegado. Los números se limpian al guardar.
         mediacion = ft.TextField(label="N° de mediación / reclamo en ML (opcional)", autofocus=True,
-                                 input_filter=ft.NumbersOnlyInputFilter())
+                                 helper_text="Pegue el número con Ctrl+V.")
         dlg = ft.AlertDialog(modal=True, title=ft.Text(f"Reclamo enviado — {d['numero_venta']}"),
                              content=ft.Container(mediacion, width=420))
 
@@ -440,8 +438,8 @@ class VistaLista:
             self.page.close(dlg)
             campos = {"estado": "reclamado", "reclamado_en": dt.datetime.now(dt.timezone.utc),
                       "reclamado_por": self.app.usuario.get("email", "")}
-            if (mediacion.value or "").strip():
-                campos["numero_mediacion"] = mediacion.value.strip()
+            if solo_digitos(mediacion.value):
+                campos["numero_mediacion"] = solo_digitos(mediacion.value)
             try:
                 self.app.devs.actualizar(d["numero_venta"], campos)
                 self.app.avisar(f"Venta {d['numero_venta']}: reclamo enviado.")
@@ -459,8 +457,7 @@ class VistaLista:
             ft.Radio(value="cobertura", label="Hubo cobertura"),
             ft.Radio(value="sin_cobertura", label="No hubo cobertura"),
         ]), value="cobertura")
-        monto = ft.TextField(label="Monto reintegrado", prefix_text="$ ", width=220,
-                             input_filter=ft.InputFilter(r"[0-9.,]"))
+        monto = ft.TextField(label="Monto reintegrado", prefix_text="$ ", width=220)
         movimiento = ft.TextField(label="N° de movimiento / ID de Devolución por Compra Protegida", expand=True)
         error = ft.Text("", color=ft.Colors.ERROR, visible=False)
 
@@ -481,10 +478,10 @@ class VistaLista:
             campos: dict = {"estado": resultado.value, "resultado_en": dt.datetime.now(dt.timezone.utc),
                             "resultado_por": self.app.usuario.get("email", "")}
             if resultado.value == "cobertura":
-                texto = (monto.value or "").replace(",", ".")
-                try:
-                    campos["monto_reintegrado"] = float(texto)
-                except ValueError:
+                valor = importe(monto.value)
+                if valor is not None:
+                    campos["monto_reintegrado"] = valor
+                else:
                     error.value, error.visible = "Ingrese el monto reintegrado.", True
                     self.page.update()
                     return

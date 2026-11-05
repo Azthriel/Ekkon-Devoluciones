@@ -35,6 +35,27 @@ def validar_numero_venta(texto: str) -> tuple[str, str | None, str | None]:
     return numero, None, advertencia
 
 
+def solo_digitos(texto: str) -> str:
+    return re.sub(r"\D", "", texto or "")
+
+
+def importe(texto: str) -> float | None:
+    """Lee un importe pegado de cualquier lado: "$ 15.190,50", "15190,5", "81665.00", "15.190"."""
+    t = re.sub(r"[^\d.,-]", "", texto or "")
+    if not t:
+        return None
+    if "," in t and "." in t:
+        t = t.replace(".", "").replace(",", ".") if t.rfind(",") > t.rfind(".") else t.replace(",", "")
+    elif "," in t:
+        t = t.replace(".", "").replace(",", ".")
+    elif t.count(".") > 1 or re.search(r"\.\d{3}$", t):
+        t = t.replace(".", "")          # puntos de miles
+    try:
+        return float(t)
+    except ValueError:
+        return None
+
+
 def descripcion_clasificacion(codigo: str) -> str:
     return dict(settings.CLASIFICACIONES).get(codigo, codigo or "—")
 

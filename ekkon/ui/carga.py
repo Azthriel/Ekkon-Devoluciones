@@ -89,7 +89,7 @@ class VistaCarga:
                                     max_length=settings.LIMITE_MENSAJE, expand=True,
                                     on_change=lambda _: self._actualizar_pasos())
         self.porcentaje = ft.TextField(label="% sugerido", width=130, suffix_text="%",
-                                       input_filter=ft.NumbersOnlyInputFilter(), max_length=3,
+                                       max_length=4,
                                        counter_text="")
         self.btn_armar = ft.FilledTonalButton("Armar reclamo", icon=ft.Icons.AUTO_AWESOME,
                                               on_click=self._armar_reclamo, height=46)
@@ -398,7 +398,8 @@ class VistaCarga:
         if faltan:
             self.app.avisar("Falta completar: " + ", ".join(faltan) + ".", error=True)
             return None
-        pct = int(self.porcentaje.value) if (self.porcentaje.value or "").isdigit() else None
+        digitos = "".join(ch for ch in (self.porcentaje.value or "") if ch.isdigit())
+        pct = int(digitos) if digitos else None
         if pct is not None and pct > 100:
             self.app.avisar("El porcentaje no puede superar 100.", error=True)
             return None
