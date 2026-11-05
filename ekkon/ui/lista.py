@@ -190,7 +190,9 @@ class VistaLista:
             ft.Row([dato("Condición", d.get("condicion")), dato("Motivo", d.get("motivo")),
                     self._deposito(d) if self.app.es_admin else dato("Depósito de origen", d.get("deposito_origen")),
                     dato("N° de mediación", d.get("numero_mediacion")),
-                    dato("Nota de crédito", "Realizada" if d.get("nc_realizada") else "Pendiente")],
+                    dato("Nota de crédito", "Realizada" if d.get("nc_realizada") else "Pendiente"),
+                    dato("Costo de envío", f"$ {d['costo_envio']:,.2f}".replace(",", "X").replace(".", ",")
+                         .replace("X", ".") if d.get("costo_envio") is not None else None)],
                    spacing=30, wrap=True),
             ft.Row([dato("Producto", d.get("producto")), dato("Pedido", d.get("pedido")),
                     dato("Fecha de venta", fecha_corta(d.get("fecha_venta")) if d.get("fecha_venta") else None),
@@ -198,9 +200,13 @@ class VistaLista:
             dato("Problema informado por el comprador", d.get("problema_comprador")),
             dato("Estado en que llegó", d.get("descripcion")),
         ]
+        url_venta = settings.link_venta(d.get("numero_venta", ""), d.get("carrito", ""))
+        enlaces: list[ft.Control] = [ft.TextButton("Ver venta en Mercado Libre", icon=ft.Icons.OPEN_IN_NEW,
+                                                   on_click=lambda _: abrir_url(page=self.page, url=url_venta))]
         if d.get("link_publicacion"):
-            cuerpo.append(ft.TextButton("Abrir publicación", icon=ft.Icons.OPEN_IN_NEW,
-                                        on_click=lambda _: abrir_url(page=self.page, url=d["link_publicacion"])))
+            enlaces.append(ft.TextButton("Abrir publicación", icon=ft.Icons.OPEN_IN_NEW,
+                                         on_click=lambda _: abrir_url(page=self.page, url=d["link_publicacion"])))
+        cuerpo.append(ft.Row(enlaces, wrap=True))
         if d.get("reclamo"):
             cuerpo.append(tarjeta(ft.Column([
                 ft.Row([seccion("Mensaje de reclamo"),
@@ -245,15 +251,20 @@ class VistaLista:
         acciones: list[ft.Control] = [ft.TextButton("Abrir fotos en carpeta", icon=ft.Icons.FOLDER_OPEN,
                                                     on_click=abrir_carpeta)]
         if self.app.es_admin:
+            # Acciones del día a día arriba del detalle, a mano y sin tener que bajar
+            botones: list[ft.Control] = []
             if not d.get("nc_realizada"):
-                acciones.append(ft.OutlinedButton("Marcar NC realizada", icon=ft.Icons.RECEIPT_LONG,
-                                                  on_click=lambda _: (cerrar(), self._marcar_nc(d))))
+                botones.append(ft.FilledTonalButton("Marcar NC realizada", icon=ft.Icons.RECEIPT_LONG,
+                                                    on_click=lambda _: (cerrar(), self._marcar_nc(d))))
             if d.get("estado") == "reclamo_armado":
-                acciones.append(ft.OutlinedButton("Marcar reclamo enviado", icon=ft.Icons.SEND,
-                                                  on_click=lambda _: (cerrar(), self._reclamo_enviado(d))))
+                botones.append(ft.FilledTonalButton("Marcar reclamo enviado", icon=ft.Icons.SEND,
+                                                    on_click=lambda _: (cerrar(), self._reclamo_enviado(d))))
             if d.get("estado") in ("reclamado", "pendiente", "reclamo_armado"):
-                acciones.append(ft.FilledTonalButton("Registrar resultado", icon=ft.Icons.FACT_CHECK,
-                                                     on_click=lambda _: (cerrar(), self.registrar_resultado(d))))
+                botones.append(ft.FilledTonalButton("Registrar resultado", icon=ft.Icons.FACT_CHECK,
+                                                    on_click=lambda _: (cerrar(), self.registrar_resultado(d))))
+            botones.append(ft.OutlinedButton("Costo de envío", icon=ft.Icons.LOCAL_SHIPPING,
+                                             on_click=lambda _: (cerrar(), self._costo_envio(d))))
+            dlg.content.content.controls.insert(1, ft.Row(botones, wrap=True, spacing=10, run_spacing=8))
             acciones.append(ft.TextButton("Borrar", icon=ft.Icons.DELETE_OUTLINE,
                                           style=ft.ButtonStyle(color=ft.Colors.ERROR),
                                           on_click=lambda _: (cerrar(), self._borrar(d))))
@@ -293,6 +304,38 @@ class VistaLista:
             self.recargar()
             d = next((x for x in self.filas if x.get("numero_venta") == d.get("numero_venta")), d)
         self.abrir_detalle(d)
+
+    def _costo_envio(self, d: dict) -> None:
+        actual = d.get("costo_envio")
+        campo = ft.TextField(label="Costo de envío", prefix_text="$ ", autofocus=True, width=260,
+                             value="" if actual is None else f"{actual:.2f}".replace(".", ","),
+                             input_filter=ft.InputFilter(r"[0-9.,]"),
+                             helper_text="Ponga 0 si no tuvo costo de envío.")
+        error = ft.Text("", color=ft.Colors.ERROR, visible=False)
+        dlg = ft.AlertDialog(modal=True, title=ft.Text(f"Costo de envío — {d['numero_venta']}"),
+                             content=ft.Container(ft.Column([campo, error], tight=True), width=420))
+
+        def guardar(_=None):
+            texto = (campo.value or "").replace(".", "").replace(",", ".").strip()
+            try:
+                valor = float(texto)
+            except ValueError:
+                error.value, error.visible = "Ingrese un importe.", True
+                self.page.update()
+                return
+            self.page.close(dlg)
+            try:
+                self.app.devs.actualizar(d["numero_venta"], {"costo_envio": valor})
+                self.app.avisar("Costo de envío guardado. Se escribe en la planilla al sincronizar.")
+            except FirebaseError as e:
+                self.app.manejar_error(e)
+            self._reabrir(d)
+
+        campo.on_submit = guardar
+        dlg.actions = [ft.TextButton("Cancelar", on_click=lambda _: (self.page.close(dlg),
+                                                                    self._reabrir(d, recargar=False))),
+                       ft.FilledButton("Guardar", on_click=guardar)]
+        self.page.open(dlg)
 
     def _marcar_nc(self, d: dict) -> None:
         clasif = d.get("clasificacion")
@@ -340,7 +383,7 @@ class VistaLista:
             ft.Radio(value="sin_cobertura", label="No hubo cobertura"),
         ]), value="cobertura")
         monto = ft.TextField(label="Monto reintegrado", prefix_text="$ ", width=220,
-                             input_filter=ft.InputFilter(r"^[0-9]*[.,]?[0-9]{0,2}$"))
+                             input_filter=ft.InputFilter(r"[0-9.,]"))
         movimiento = ft.TextField(label="N° de movimiento / ID de Devolución por Compra Protegida", expand=True)
         error = ft.Text("", color=ft.Colors.ERROR, visible=False)
 

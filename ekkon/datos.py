@@ -56,8 +56,6 @@ def armar_prompt(d: dict, cantidad_fotos: int) -> str:
         lineas.append(f"Producto: {d['producto']}")
     if d.get("codigo_producto"):
         lineas.append(f"Código de producto: {d['codigo_producto']}")
-    if d.get("link_publicacion"):
-        lineas.append(f"Publicación: {d['link_publicacion']}")
     if d.get("problema_comprador"):
         lineas.append(f"Problema que informó el comprador: {d['problema_comprador']}")
     lineas += [

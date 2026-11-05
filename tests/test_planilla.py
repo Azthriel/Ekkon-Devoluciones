@@ -280,3 +280,18 @@ def test_con_tabla_agranda_la_tabla_y_escribe_fechas_como_texto_local():
     assert upd["table"]["tableId"] == "T1" and upd["table"]["range"]["endRowIndex"] == 6
     fila_nueva = posts[1]["data"][0]["values"][0]
     assert fila_nueva[0] == "05/11/2026"
+
+
+def test_costo_de_envio():
+    h = hoja_ejemplo()
+    escritas = dict(P.planificar(h, [dev("2000018604612862", costo_envio=15190.0)], hoy=HOY).celdas)
+    assert escritas["L5"] == 15190.0
+    escritas = dict(P.planificar(h, [dev("2000018604612862", costo_envio=0.0)], hoy=HOY).celdas)
+    assert escritas["L5"] == 0.0
+
+
+def test_link_de_la_venta():
+    from ekkon import settings
+    assert settings.link_venta("2000019107329828") == \
+        "https://vendedores.mercadolibre.com.ar/ventas/2000019107329828/detalle"
+    assert settings.link_venta("2000018016486734", "2000014609910837").endswith("/2000014609910837/detalle")

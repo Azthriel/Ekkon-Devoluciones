@@ -33,6 +33,7 @@ C_ESTADO1 = "Estado (1er reclamo)"
 C_MONTO = "Monto Reintegrado"
 C_MOVIMIENTO = "N° Movimiento"
 C_COSTO = "Costo del producto"
+C_COSTO_ENVIO = "Costo de envio"
 # Columna opcional: si la planilla tiene una columna con alguno de estos nombres, se completa el pedido
 C_PEDIDO = "N° Pedido"
 ALIAS = {C_PEDIDO: ("N° Pedido", "Pedido", "Nro Pedido", "N° de Pedido", "Nro. Pedido")}
@@ -58,7 +59,7 @@ EMAIL_ENVIADO = "Email enviado"
 
 
 def normalizar(texto) -> str:
-    t = unicodedata.normalize("NFKD", str(texto or "")).encode("ascii", "ignore").decode()
+    t = unicodedata.normalize("NFKD", "" if texto is None else str(texto)).encode("ascii", "ignore").decode()
     return re.sub(r"\s+", " ", t).strip().lower()
 
 
@@ -182,6 +183,8 @@ def valores_de(dev: dict, hoy: dt.date | None = None) -> dict:
     final = dev.get("deposito_final") or settings.DEPOSITO_FINAL.get(dev.get("clasificacion", ""))
     if final:
         v[C_DEP_FINAL] = final
+    if dev.get("costo_envio") is not None:
+        v[C_COSTO_ENVIO] = dev["costo_envio"]
     if dev.get("nc_realizada"):
         v[C_NDC] = "Si"
         if dev.get("transferencia"):

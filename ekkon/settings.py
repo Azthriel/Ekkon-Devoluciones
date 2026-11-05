@@ -21,6 +21,14 @@ FOTO_BYTES_MAXIMOS = 850_000
 URL_ML_VENCEN_HOY = ("https://vendedores.mercadolibre.com.ar/post-purchase/post-sales"
                      "?main.filter=returns&temporal.filter=urgent#from=seller-menu")
 
+# Detalle de la venta en Mercado Libre. Si la venta es parte de un carrito, ML usa el ID Carrito.
+URL_VENTA_ML = "https://vendedores.mercadolibre.com.ar/ventas/{id}/detalle"
+
+
+def link_venta(numero_venta: str, carrito: str = "") -> str:
+    return URL_VENTA_ML.format(id=carrito or numero_venta) if (carrito or numero_venta) else ""
+
+
 # Los códigos coinciden con las listas desplegables de la planilla "Devoluciones nuevo"
 CLASIFICACIONES = [
     ("N", "N — Nuevo, vuelve a stock de venta"),

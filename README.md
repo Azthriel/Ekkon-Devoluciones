@@ -19,6 +19,7 @@ Programa de Windows para cargar y gestionar las devoluciones de Mercado Libre.
   Firestore repartido en 100 documentos (`ventas_idx`), se conservan 180 días. Con eso la carga convierte el ID Carrito
   en Venta #, muestra el producto y completa el SKU; y la sincronización completa fecha de compra, artículo, SKU,
   depósito de origen (Sucursal) y costo, y detecta filas con el ID Carrito en "N° Venta".
+- **Detalle de la venta**: link automático al detalle de la venta en ML (usa el ID Carrito si la venta es parte de un carrito) y botón *Costo de envío* que se escribe en la planilla.
 - **Emails**: arma la solicitud de transferencia con las filas que tienen Transferencia = "A la espera de
   movimiento". Origen siempre Service Podestá (ahí entra la unidad al hacer la NC); destino según "Deposito final".
   Incluye *Abrir en Gmail* y *Marcar como enviado*.

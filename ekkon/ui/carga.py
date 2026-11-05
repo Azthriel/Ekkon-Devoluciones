@@ -68,7 +68,8 @@ class VistaCarga:
             options=[ft.dropdown.Option(d) for d in settings.DEPOSITOS_ORIGEN],
             helper_text="Full si vino del depósito de Full.", visible=self.app.es_admin)
         self.codigo = ft.TextField(label="SKU / código de producto", width=320, prefix_icon=ft.Icons.QR_CODE_2)
-        self.link = ft.TextField(label="Link de la publicación", expand=True, prefix_icon=ft.Icons.LINK)
+        # El link ya no se carga: se arma solo con el número (detalle de la venta en ML)
+        self.link = ft.TextField(visible=False)
         self.problema = ft.TextField(label="Problema que informó el comprador", multiline=True,
                                      min_lines=2, max_lines=4,
                                      helper_text="Copiarlo de \"Problema de la venta\" y los mensajes del comprador.")
@@ -138,7 +139,6 @@ class VistaCarga:
                 self.info_venta,
                 ft.Row([self.motivo, self.codigo], wrap=True, spacing=16,
                        vertical_alignment=ft.CrossAxisAlignment.START),
-                self.link,
                 self.problema,
             ], spacing=14)),
             tarjeta(ft.Column([
@@ -226,6 +226,10 @@ class VistaCarga:
             self._mostrar_info(ft.Colors.BLUE_700, ft.Icons.SWAP_HORIZ, f"{aviso}\n{texto}")
         else:
             self._mostrar_info(ft.Colors.GREEN_700, ft.Icons.CHECK_CIRCLE, texto)
+        url = settings.link_venta(v.venta, v.carrito)
+        self.info_venta.content.controls.append(
+            ft.TextButton("Ver venta en ML", icon=ft.Icons.OPEN_IN_NEW,
+                          on_click=lambda _: abrir_url(page=self.page, url=url)))
         self._verificar_duplicado()
 
     def _buscar_en_informe(self, numero: str, actualizar: bool = True) -> None:
