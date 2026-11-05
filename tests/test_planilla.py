@@ -295,3 +295,38 @@ def test_link_de_la_venta():
     assert settings.link_venta("2000019107329828") == \
         "https://vendedores.mercadolibre.com.ar/ventas/2000019107329828/detalle"
     assert settings.link_venta("2000018016486734", "2000014609910837").endswith("/2000014609910837/detalle")
+
+
+@pytest.mark.parametrize("titulo,esperado", [
+    ("UPPER TALADRO PERCUTOR 20V BRUSHLESS 13 MM 2BAT CARG (UP-TPB1320-2.BLP)", "UP-TPB1320-2.BLP"),
+    ("COMBO (3 X 1KG KB-AF08 ) KOMMBERG ALAMBRE FLUX, 0.8MM 3 ROLLOS", "KB-AF08"),
+    ("LILIANA VAPORERA DIGITAL 3 NIVELES 1050W (AV930)", "AV930"),
+    ("EINHELL MANGUERA DE AIRE 9MM 10BAR 15 MTS", "EINHELL MANGUERA DE AIRE 9MM 10BAR 15 MTS"),
+])
+def test_modelo_de_otras_marcas(titulo, esperado):
+    assert P.modelo(titulo) == esperado
+
+
+def test_email_usa_el_modelo_del_informe():
+    from ekkon.ventas import Venta
+    h = P.Hoja([ENCABEZADOS, fila(**{"N° Venta": "2000000000000001", "SKU": "RLA-0045",
+                                    "Articulo": "Aspiradora Kommberg 60 litros sin modelo",
+                                    "Transferencia": "A la espera de movimiento", "Deposito final": "Podestá"})])
+    ventas = {"2000000000000001": Venta("2000000000000001", "", "", None, "RLA-0045",
+                                        "KOMMBERG ASPIRADORA 60L (KB-VC60LG)", "Podestá", 1, None)}
+    item = P.pendientes(h, {}, ventas)[0]
+    assert item.producto == "KB-VC60LG"
+    assert "RLA-0045 | KB-VC60LG | 1" in P.email_transferencia([item])[1]
+    assert P.pendientes(h, {"RLA-0045": "KB-OTRO"}, ventas)[0].producto == "KB-OTRO"   # la corrección manual gana
+
+
+def test_cobertura_marca_reportado_no():
+    h = hoja_ejemplo()
+    d = dev("2000014434008281", clasificacion="B", condicion="Con uso", reclamo=True, estado="cobertura",
+            monto_reintegrado=100.0)
+    assert dict(P.planificar(h, [d], hoy=HOY).celdas)["W4"] == "No"
+    # Si después él lo cambia a "Si", no se reporta como diferencia ni se pisa
+    filas = [h.encabezados] + [list(f) for f in h.filas]
+    filas[3][ENCABEZADOS.index("¿Se reporto movimiento?")] = "Si"
+    plan = P.planificar(P.Hoja(filas), [d], hoy=HOY)
+    assert "W4" not in dict(plan.celdas) and not any(c[1] == "¿Se reporto movimiento?" for c in plan.conflictos)

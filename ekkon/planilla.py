@@ -32,6 +32,7 @@ C_MEDIACION = "N° Mediación"
 C_ESTADO1 = "Estado (1er reclamo)"
 C_MONTO = "Monto Reintegrado"
 C_MOVIMIENTO = "N° Movimiento"
+C_REPORTADO = "¿Se reporto movimiento?"
 C_COSTO = "Costo del producto"
 C_COSTO_ENVIO = "Costo de envio"
 # Columna opcional: si la planilla tiene una columna con alguno de estos nombres, se completa el pedido
@@ -46,7 +47,7 @@ REEMPLAZABLES = {C_ESTADO1: {"pendiente"}, C_CLASIF: {"service interno"}, C_COND
 
 # Columnas donde el valor del programa es solo el inicial: si después cambia en la planilla
 # (Email enviado, Realizada) no es una diferencia para reportar
-SOLO_INICIAL = {C_TRANSF}
+SOLO_INICIAL = {C_TRANSF, C_REPORTADO}
 
 ESTADO_A_PLANILLA = {
     "reclamado": "Pendiente",
@@ -201,6 +202,7 @@ def valores_de(dev: dict, hoy: dt.date | None = None) -> dict:
             v[C_MONTO] = dev["monto_reintegrado"]
         if dev.get("numero_movimiento"):
             v[C_MOVIMIENTO] = dev["numero_movimiento"]
+        v[C_REPORTADO] = "No"   # cobertura nueva: todavía no se informó por email
     return v
 
 
@@ -412,12 +414,46 @@ MODELO = re.compile(r"\b(?:KB|UP)-[A-Z0-9][A-Z0-9.\-]*", re.IGNORECASE)
 
 
 def modelo(articulo) -> str:
-    """Extrae el modelo (ej. KB-MH52D) del título del artículo; si no hay, devuelve el título."""
+    """Modelo del producto para los emails (ej. KB-MH52D, UP-TPB1320-2.BLP, AV930).
+
+    Busca primero un código KB-/UP- (preferentemente entre paréntesis), después el último texto entre
+    paréntesis del título; si no hay nada, devuelve el título.
+    """
     texto = str(articulo or "").strip()
+    parentesis = re.findall(r"\(([^()]*)\)", texto)
+    for p in reversed(parentesis):
+        encontrados = MODELO.findall(p)
+        if encontrados:
+            return encontrados[-1].upper().rstrip(".-")
     encontrados = MODELO.findall(texto)
     if encontrados:
         return encontrados[-1].upper().rstrip(".-")
+    if parentesis and parentesis[-1].strip():
+        return parentesis[-1].strip().upper()
     return texto
+
+
+def modelos_del_informe(ventas: dict | None) -> dict[str, str]:
+    """SKU -> modelo según los títulos del informe de ventas (solo si el título trae el modelo)."""
+    salida: dict[str, str] = {}
+    for v in (ventas or {}).values():
+        if v.codigo and v.producto and v.codigo not in salida:
+            m = modelo(v.producto)
+            if m != v.producto.strip():
+                salida[v.codigo] = m
+    return salida
+
+
+def _producto_para_email(hoja, i, sku, venta, modelos, ventas, del_informe) -> str:
+    """Prioridad: corrección manual > título de esa venta en el informe > SKU en el informe > planilla."""
+    if modelos.get(sku):
+        return modelos[sku]
+    info = (ventas or {}).get(venta)
+    if info and info.producto:
+        m = modelo(info.producto)
+        if m != info.producto.strip():
+            return m
+    return del_informe.get(sku) or modelo(hoja.valor(i, C_ARTICULO))
 
 
 @dataclass
@@ -436,12 +472,13 @@ ESPERA_MOVIMIENTO = "a la espera de movimiento"
 DESTINOS_TRANSFERENCIA = {"podesta", "scrap"}
 
 
-def pendientes(hoja: Hoja, modelos: dict | None = None) -> list[ItemEmail]:
+def pendientes(hoja: Hoja, modelos: dict | None = None, ventas: dict | None = None) -> list[ItemEmail]:
     """Filas con Transferencia = "A la espera de movimiento".
 
     modelos: SKU -> modelo guardado (ej. "RLA-0045" -> "KB-VC60LG"), para títulos sin modelo.
     """
     modelos = modelos or {}
+    del_informe = modelos_del_informe(ventas)
     salida = []
     for i in range(len(hoja.filas)):
         venta = venta_de_celda(hoja.valor(i, C_VENTA))
@@ -452,17 +489,18 @@ def pendientes(hoja: Hoja, modelos: dict | None = None) -> list[ItemEmail]:
         destino = str(hoja.valor(i, C_DEP_FINAL) or "").strip() or settings.DEPOSITO_FINAL.get(clasif, "")
         salida.append(ItemEmail(
             fila=hoja.numero_fila(i), venta=venta, sku=sku,
-            producto=modelos.get(sku) or modelo(hoja.valor(i, C_ARTICULO)), clasificacion=clasif,
+            producto=_producto_para_email(hoja, i, sku, venta, modelos, ventas, del_informe), clasificacion=clasif,
             destino=destino, fecha=fecha_de_serial(hoja.valor(i, C_FECHA_REV))))
     return salida
 
 
-def enviados(hoja: Hoja, modelos: dict | None = None) -> list[ItemEmail]:
+def enviados(hoja: Hoja, modelos: dict | None = None, ventas: dict | None = None) -> list[ItemEmail]:
     """Filas con Transferencia = "Email enviado" y destino Podestá o Scrap, más recientes primero.
 
     Son las transferencias pedidas que falta llevar y marcar como Realizada.
     """
     modelos = modelos or {}
+    del_informe = modelos_del_informe(ventas)
     salida = []
     for i in range(len(hoja.filas)):
         venta = venta_de_celda(hoja.valor(i, C_VENTA))
@@ -474,7 +512,7 @@ def enviados(hoja: Hoja, modelos: dict | None = None) -> list[ItemEmail]:
         sku = str(hoja.valor(i, C_SKU) or "").strip()
         salida.append(ItemEmail(
             fila=hoja.numero_fila(i), venta=venta, sku=sku,
-            producto=modelos.get(sku) or modelo(hoja.valor(i, C_ARTICULO)),
+            producto=_producto_para_email(hoja, i, sku, venta, modelos, ventas, del_informe),
             clasificacion=str(hoja.valor(i, C_CLASIF) or "").strip(), destino=destino,
             fecha=fecha_de_serial(hoja.valor(i, C_FECHA_REV))))
     salida.sort(key=lambda it: (it.fecha or dt.date.min, it.fila), reverse=True)

@@ -68,9 +68,13 @@ class VistaEmails:
             self.planilla = abrir_planilla(self.app)
             self.hoja = self.planilla.leer()
             modelos = self.app.config.get("modelos_por_sku") or {}
-            self.items = pendientes(self.hoja, modelos)
+            try:
+                ventas = self.app.indice.todas()
+            except FirebaseError:
+                ventas = {}
+            self.items = pendientes(self.hoja, modelos, ventas)
             self.marcados = {it.fila for it in self.items}
-            self.enviados = enviados(self.hoja, modelos)
+            self.enviados = enviados(self.hoja, modelos, ventas)
             self.marcados_env = set()
             self.estado.value = (f"{len(self.items)} fila(s) a la espera de movimiento y {len(self.enviados)} "
                                  "con el email enviado que falta marcar como realizada.")

@@ -64,13 +64,16 @@ class VistaLista:
         filtros += [ft.IconButton(ft.Icons.REFRESH, tooltip="Actualizar", on_click=lambda _: self.recargar()),
                     self.contador]
         if self.app.es_admin:
+            # El botón va arriba a la derecha, junto al título, así no se sale de la pantalla
             from .sincronizar import sincronizar
-            filtros += [ft.Container(expand=True),
-                        ft.FilledTonalButton("Sincronizar planilla", icon=ft.Icons.TABLE_CHART,
-                                             on_click=lambda _: sincronizar(self.app))]
+            encabezado = ft.Row([encabezado,
+                                 ft.FilledTonalButton("Sincronizar planilla", icon=ft.Icons.TABLE_CHART,
+                                                      on_click=lambda _: sincronizar(self.app))],
+                                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                                vertical_alignment=ft.CrossAxisAlignment.START)
         return ft.Column([
             encabezado,
-            ft.Row(filtros, spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            ft.Row(filtros, spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER, wrap=True),
             self.cargando,
             tarjeta(ft.Column([ft.Row([self.tabla], scroll=ft.ScrollMode.AUTO)], scroll=ft.ScrollMode.AUTO,
                               expand=True), padding=8),
