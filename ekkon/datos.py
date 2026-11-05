@@ -68,6 +68,43 @@ def armar_prompt(d: dict, cantidad_fotos: int) -> str:
     return "\n".join(lineas)
 
 
+# ---------------------------------------------------------------- guía para Mercado Libre
+
+OPCION_OTRA_FALLA = "Reportar otra falla en el producto"
+_RE_DANADO = re.compile(r"da[ñn]ad|rot[oa]|no funciona|no enciende|no anda|no prende|falla|defectuos", re.IGNORECASE)
+_RE_USO = re.compile(r"\busad|\buso\b|con uso|sucie|aserr[ií]n|restos|desgast", re.IGNORECASE)
+
+
+def guia_mercadolibre(d: dict) -> dict:
+    """Qué hacer en Mercado Libre con esta devolución: pasos y opción de reclamo sugerida."""
+    if not d.get("reclamo"):
+        return {"tipo": "sin_reclamo", "opcion": None, "nota": None, "pasos": [
+            "Abra la venta en Mercado Libre con el botón \"Ver venta en ML\".",
+            "Toque \"Ya la revisé\".",
+            "Elija \"Llegó como esperaba\".",
+            "Vuelva acá y toque \"Marcar revisada en ML\".",
+        ]}
+    comprador = " ".join(str(d.get(k) or "") for k in ("motivo", "problema_comprador"))
+    nuestro = " ".join(str(d.get(k) or "") for k in ("condicion", "descripcion"))
+    comprador_dijo_danado = d.get("motivo") in ("Roto", "no funciona") or bool(_RE_DANADO.search(comprador))
+    reclamamos_por_uso = d.get("condicion") == "Con uso" or bool(_RE_USO.search(nuestro))
+    opcion, nota = None, None
+    if comprador_dijo_danado and reclamamos_por_uso:
+        opcion = OPCION_OTRA_FALLA
+        nota = ("El comprador dijo que llegó dañado o que no funciona, pero el reclamo es porque el producto "
+                "volvió usado: NO elija \"El producto llegó dañado\".")
+    return {"tipo": "reclamo", "opcion": opcion, "nota": nota, "pasos": [
+        "Abra la venta en Mercado Libre con el botón \"Ver venta en ML\".",
+        "Lea el \"Problema de la venta\" y los mensajes del comprador.",
+        "Toque \"Ya la revisé\" → \"Reportar un problema\".",
+        (f"Elija la opción \"{opcion}\"." if opcion else
+         "Elija la opción que corresponda a lo que encontró en el producto. Si tiene dudas, consulte antes de enviar."),
+        "Pegue el mensaje (botón \"Copiar mensaje\") y adjunte las fotos (botón \"Abrir fotos\").",
+        "Cuando ML pregunte el monto, pida el porcentaje sugerido del precio de venta.",
+        "Envíe el reclamo, vuelva acá y toque \"Marcar reclamo enviado\".",
+    ]}
+
+
 _RE_PORCENTAJE = re.compile(r"porcentaje[^\d\n]{0,40}(\d{1,3})\s*%", re.IGNORECASE)
 _RE_CUALQUIER_PCT = re.compile(r"(\d{1,3})\s*%")
 

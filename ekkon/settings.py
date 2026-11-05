@@ -79,7 +79,7 @@ HOJA_PLANILLA = "Devoluciones"
 
 ESTADOS = {
     "cargada": "Cargada",
-    "reclamo_armado": "Reclamo armado",
+    "reclamo_armado": "Reclamo por enviar",
     "sin_reclamo": "Sin reclamo",
     "reclamado": "Reclamo enviado",
     "pendiente": "Pendiente de ML",

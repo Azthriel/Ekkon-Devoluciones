@@ -57,3 +57,16 @@ def test_versiones():
     assert comparar("0.1.0", "0.2.0") == -1
     assert comparar("v1.0", "1.0.0") == 0
     assert comparar("1.10.0", "1.9.9") == 1
+
+
+def test_guia_mercadolibre():
+    from ekkon.datos import OPCION_OTRA_FALLA, guia_mercadolibre
+    g = guia_mercadolibre({"reclamo": False})
+    assert g["tipo"] == "sin_reclamo" and any("Llegó como esperaba" in p for p in g["pasos"])
+    # El comprador dijo que no funciona y reclamamos por uso: "otra falla", no "llegó dañado"
+    g = guia_mercadolibre({"reclamo": True, "motivo": "no funciona", "condicion": "Con uso",
+                           "descripcion": "llegó usado, con aserrín"})
+    assert g["opcion"] == OPCION_OTRA_FALLA and "NO elija" in g["nota"]
+    g = guia_mercadolibre({"reclamo": True, "motivo": "no lo quiere", "condicion": "caja rota",
+                           "descripcion": "caja rota"})
+    assert g["opcion"] is None and any("consulte" in p for p in g["pasos"])

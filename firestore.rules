@@ -46,8 +46,11 @@ service cloud.firestore {
       allow create: if activo()
         && request.resource.data.numero_venta == venta
         && (admin() || editableCarga(request.resource.data.estado));
+      // El perfil de carga también puede marcar el reclamo como enviado (y después ya no lo puede tocar)
       allow update: if admin()
-        || (activo() && editableCarga(resource.data.estado) && editableCarga(request.resource.data.estado));
+        || (activo() && editableCarga(resource.data.estado)
+            && (editableCarga(request.resource.data.estado)
+                || (resource.data.estado == 'reclamo_armado' && request.resource.data.estado == 'reclamado')));
       allow delete: if admin();
 
       match /fotos/{foto} {

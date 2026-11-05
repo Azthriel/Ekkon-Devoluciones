@@ -46,6 +46,13 @@ PASOS_CARGA = [
      ["Revise el mensaje y toque \"Guardar\". El formulario queda limpio para la próxima.",
       "Arriba del formulario hay una lista de pasos: cuando todos están en verde, ya puede guardar.",
       "En \"Devoluciones\" ve todo lo cargado. Si se equivocó, abra la venta y toque \"Editar\"."]),
+    (ft.Icons.SEND, "8. Enviar el reclamo en Mercado Libre",
+     ["Al guardar se abre la devolución con un recuadro \"Qué hacer en Mercado Libre\".",
+      "Siga los pasos: abra la venta en ML, toque \"Ya la revisé\" y, si hay reclamo, \"Reportar un problema\".",
+      "El recuadro le dice qué opción elegir, el porcentaje a pedir, y tiene botones para copiar el mensaje "
+      "y abrir las fotos.",
+      "Cuando lo envió, toque \"Marcar reclamo enviado\". Si no había reclamo, toque \"Marcar revisada en ML\".",
+      "Si tiene que retomar una, búsquela en \"Devoluciones\" (filtro \"Reclamo por enviar\")."]),
 ]
 
 PASOS_ADMIN = [

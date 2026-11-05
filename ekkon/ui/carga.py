@@ -504,8 +504,16 @@ class VistaCarga:
         self.app.avisar(f"Venta {datos['numero_venta']} guardada ({settings.ESTADOS[datos['estado']]}).")
         if self.editando:
             self._terminar()
-        else:
-            self._limpiar()
+            return
+        self._limpiar()
+        # Se abre la devolución con los pasos para hacer en Mercado Libre
+        try:
+            guardada = self.app.devs.obtener(datos["numero_venta"])
+        except FirebaseError:
+            guardada = None
+        if guardada:
+            from .lista import VistaLista
+            VistaLista(self.app).abrir_detalle(guardada, desde_carga=True)
 
     def _terminar(self) -> None:
         if self.al_terminar:

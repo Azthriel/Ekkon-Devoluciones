@@ -8,12 +8,12 @@ import flet as ft
 from ..local import abrir_url
 
 from .. import local, settings
-from ..datos import descripcion_clasificacion
+from ..datos import descripcion_clasificacion, guia_mercadolibre
 from ..firebase import FirebaseError
 from ..fotos import miniatura_b64
 from .comun import chip_estado, fecha_corta, hoy_iso, seccion, tarjeta, titulo
 
-ESTADOS_PENDIENTES = ("reclamo_armado", "reclamado", "pendiente")
+ESTADOS_PENDIENTES = ("reclamado", "pendiente")
 
 
 class VistaLista:
@@ -47,7 +47,8 @@ class VistaLista:
 
     def _vista_listado(self) -> ft.Control:
         if self.modo == "pendientes":
-            encabezado = titulo("Pendientes", "Reclamos enviados o por enviar que esperan respuesta de Mercado Libre.")
+            encabezado = titulo("Pendientes", "Reclamos enviados que esperan la respuesta de Mercado Libre. "
+                                              "Abra cada uno para registrar si hubo cobertura.")
         else:
             encabezado = titulo("Devoluciones", "Toque una fila para ver el detalle.")
         filtros: list[ft.Control] = [self.buscar]
@@ -147,6 +148,10 @@ class VistaLista:
                 on_select_changed=lambda _, d=d: self.abrir_detalle(d),
             ))
         self.contador.value = f"{len(filas)} de {len(self.filas)}"
+        if self.modo == "pendientes":
+            por_enviar = sum(1 for d in self.filas if d.get("estado") == "reclamo_armado")
+            if por_enviar:
+                self.contador.value += f"  ·  {por_enviar} reclamo(s) armados que Alan todavía no envió"
         self._actualizar()
 
     # ------------------------------------------------------------ detalle
@@ -154,7 +159,50 @@ class VistaLista:
     def _puede_editar(self, d: dict) -> bool:
         return self.app.es_admin or d.get("estado") in settings.ESTADOS_EDITABLES_CARGA
 
-    def abrir_detalle(self, d: dict) -> None:
+    def _guia(self, d: dict, url_venta: str, mensaje: str, abrir_carpeta, cerrar) -> ft.Control | None:
+        """Tarjeta "Qué hacer en Mercado Libre" con los pasos y los botones para hacerlo."""
+        estado = d.get("estado")
+        pendiente_reclamo = d.get("reclamo") and estado in ("cargada", "reclamo_armado")
+        pendiente_revision = not d.get("reclamo") and estado == "sin_reclamo" and not d.get("ml_revisada")
+        if not (pendiente_reclamo or pendiente_revision):
+            return None
+        g = guia_mercadolibre(d)
+        filas: list[ft.Control] = [seccion("Qué hacer en Mercado Libre")]
+        if g["tipo"] == "reclamo" and not mensaje:
+            filas.append(ft.Text("Primero hay que armar el mensaje: toque \"Editar\" → \"Armar reclamo\".",
+                                 color=ft.Colors.AMBER_800, weight=ft.FontWeight.W_600))
+        if g["opcion"]:
+            filas.append(ft.Container(ft.Text(f"Opción de reclamo: {g['opcion']}", weight=ft.FontWeight.W_700),
+                                      padding=ft.padding.symmetric(6, 10), border_radius=8,
+                                      bgcolor=ft.Colors.with_opacity(0.12, ft.Colors.PRIMARY)))
+        if g["nota"]:
+            filas.append(ft.Text(g["nota"], size=12, color=ft.Colors.AMBER_800))
+        filas += [ft.Text(f"{i}. {p}", size=13) for i, p in enumerate(g["pasos"], 1)]
+        pct = d.get("porcentaje_sugerido")
+        botones: list[ft.Control] = [
+            ft.OutlinedButton("Ver venta en ML", icon=ft.Icons.OPEN_IN_NEW,
+                              on_click=lambda _: abrir_url(page=self.page, url=url_venta))]
+        if g["tipo"] == "reclamo":
+            botones += [
+                ft.OutlinedButton("Copiar mensaje", icon=ft.Icons.COPY, disabled=not mensaje,
+                                  on_click=lambda _: (self.page.set_clipboard(mensaje),
+                                                      self.app.avisar("Mensaje copiado. Péguelo en ML con Ctrl+V."))),
+                ft.OutlinedButton("Abrir fotos", icon=ft.Icons.FOLDER_OPEN, on_click=abrir_carpeta),
+                ft.FilledButton("Marcar reclamo enviado", icon=ft.Icons.SEND, disabled=not mensaje,
+                                on_click=lambda _: (cerrar(), self._reclamo_enviado(d))),
+            ]
+            if pct is not None:
+                filas.insert(1, ft.Text(f"Porcentaje a pedir: {pct}% del precio de venta",
+                                        weight=ft.FontWeight.W_600))
+        else:
+            botones.append(ft.FilledButton("Marcar revisada en ML", icon=ft.Icons.TASK_ALT,
+                                           on_click=lambda _: (cerrar(), self._marcar_revisada(d))))
+        filas.append(ft.Row(botones, wrap=True, spacing=10, run_spacing=8))
+        return ft.Container(ft.Column(filas, spacing=8), padding=16, border_radius=12,
+                            bgcolor=ft.Colors.with_opacity(0.06, ft.Colors.PRIMARY),
+                            border=ft.border.all(1, ft.Colors.with_opacity(0.35, ft.Colors.PRIMARY)))
+
+    def abrir_detalle(self, d: dict, desde_carga: bool = False) -> None:
         if not (d.get("producto") and d.get("deposito_origen")):
             # Cargada antes de importar el informe: se muestran los datos del informe igual
             try:
@@ -250,25 +298,26 @@ class VistaLista:
 
         acciones: list[ft.Control] = [ft.TextButton("Abrir fotos en carpeta", icon=ft.Icons.FOLDER_OPEN,
                                                     on_click=abrir_carpeta)]
+        guia = self._guia(d, url_venta, mensaje, abrir_carpeta, cerrar)
+        if guia:
+            dlg.content.content.controls.insert(1, guia)
         if self.app.es_admin:
             # Acciones del día a día arriba del detalle, a mano y sin tener que bajar
             botones: list[ft.Control] = []
             if not d.get("nc_realizada"):
                 botones.append(ft.FilledTonalButton("Marcar NC realizada", icon=ft.Icons.RECEIPT_LONG,
                                                     on_click=lambda _: (cerrar(), self._marcar_nc(d))))
-            if d.get("estado") == "reclamo_armado":
-                botones.append(ft.FilledTonalButton("Marcar reclamo enviado", icon=ft.Icons.SEND,
-                                                    on_click=lambda _: (cerrar(), self._reclamo_enviado(d))))
             if d.get("estado") in ("reclamado", "pendiente", "reclamo_armado"):
                 botones.append(ft.FilledTonalButton("Registrar resultado", icon=ft.Icons.FACT_CHECK,
                                                     on_click=lambda _: (cerrar(), self.registrar_resultado(d))))
             botones.append(ft.OutlinedButton("Costo de envío", icon=ft.Icons.LOCAL_SHIPPING,
                                              on_click=lambda _: (cerrar(), self._costo_envio(d))))
-            dlg.content.content.controls.insert(1, ft.Row(botones, wrap=True, spacing=10, run_spacing=8))
+            if botones:
+                dlg.content.content.controls.insert(1, ft.Row(botones, wrap=True, spacing=10, run_spacing=8))
             acciones.append(ft.TextButton("Borrar", icon=ft.Icons.DELETE_OUTLINE,
                                           style=ft.ButtonStyle(color=ft.Colors.ERROR),
                                           on_click=lambda _: (cerrar(), self._borrar(d))))
-        if self._puede_editar(d):
+        if self._puede_editar(d) and not desde_carga:
             acciones.append(ft.OutlinedButton("Editar", icon=ft.Icons.EDIT, on_click=editar))
         acciones.append(ft.FilledButton("Cerrar", on_click=cerrar))
         dlg.actions = acciones
@@ -297,6 +346,16 @@ class VistaLista:
 
         return ft.Dropdown(label="Depósito de origen", value=d.get("deposito_origen"), width=200, dense=True,
                            options=[ft.dropdown.Option(x) for x in settings.DEPOSITOS_ORIGEN], on_change=cambio)
+
+    def _marcar_revisada(self, d: dict) -> None:
+        try:
+            self.app.devs.actualizar(d["numero_venta"], {"ml_revisada": True,
+                                                         "ml_revisada_en": dt.datetime.now(dt.timezone.utc),
+                                                         "ml_revisada_por": self.app.usuario.get("email", "")})
+            self.app.avisar(f"Venta {d['numero_venta']}: revisada en ML.")
+        except FirebaseError as e:
+            self.app.manejar_error(e)
+        self._reabrir(d)
 
     def _reabrir(self, d: dict, recargar: bool = True) -> None:
         """Vuelve a abrir el detalle (con los datos actualizados) después de una acción."""
@@ -362,7 +421,8 @@ class VistaLista:
 
         def guardar(_):
             self.page.close(dlg)
-            campos = {"estado": "reclamado", "reclamado_en": dt.datetime.now(dt.timezone.utc)}
+            campos = {"estado": "reclamado", "reclamado_en": dt.datetime.now(dt.timezone.utc),
+                      "reclamado_por": self.app.usuario.get("email", "")}
             if (mediacion.value or "").strip():
                 campos["numero_mediacion"] = mediacion.value.strip()
             try:
