@@ -23,7 +23,7 @@ class VistaLista:
         self.modo = modo
         self.filas: list[dict] = []
         self.contenedor = ft.Container(expand=True)
-        self.buscar = ft.TextField(hint_text="Buscar por venta, código o texto", prefix_icon=ft.Icons.SEARCH,
+        self.buscar = ft.TextField(hint_text="Buscar por Venta #, ID Carrito, SKU o texto", prefix_icon=ft.Icons.SEARCH,
                                    width=340, dense=True, on_change=lambda _: self._pintar())
         opciones = [ft.dropdown.Option("todos", "Todos los estados")]
         opciones += [ft.dropdown.Option(k, v) for k, v in settings.ESTADOS.items()]
@@ -85,8 +85,22 @@ class VistaLista:
         except Exception:  # noqa: BLE001 - control aún no montado
             pass
 
+    def _ventas_de_carrito(self, texto: str) -> set:
+        """Si se buscó un ID Carrito (16 dígitos), los Venta # de ese carrito según el informe."""
+        numero = "".join(ch for ch in texto if ch.isdigit())
+        if len(numero) != 16:
+            return set()
+        try:
+            r = self.app.indice.buscar(numero)
+        except Exception:  # noqa: BLE001 - sin informe o sin conexión: se busca solo por texto
+            return set()
+        if r.tipo == "carrito":
+            return {o[0] for o in (r.opciones or [])}
+        return set()
+
     def _visibles(self) -> list[dict]:
         texto = (self.buscar.value or "").strip().lower()
+        ventas_del_carrito = self._ventas_de_carrito(texto) if texto else set()
         hoy = hoy_iso()
         salida = []
         for d in self.filas:
@@ -101,8 +115,9 @@ class VistaLista:
                     continue
             if texto:
                 pajar = " ".join(str(d.get(k, "")) for k in
-                                 ("numero_venta", "codigo_producto", "descripcion", "cargado_por")).lower()
-                if texto not in pajar:
+                                 ("numero_venta", "carrito", "codigo_producto", "producto", "pedido",
+                                  "descripcion", "cargado_por")).lower()
+                if texto not in pajar and d.get("numero_venta") not in ventas_del_carrito:
                     continue
             salida.append(d)
         return salida
@@ -272,10 +287,18 @@ class VistaLista:
         return ft.Dropdown(label="Depósito de origen", value=d.get("deposito_origen"), width=200, dense=True,
                            options=[ft.dropdown.Option(x) for x in settings.DEPOSITOS_ORIGEN], on_change=cambio)
 
+    def _reabrir(self, d: dict, recargar: bool = True) -> None:
+        """Vuelve a abrir el detalle (con los datos actualizados) después de una acción."""
+        if recargar:
+            self.recargar()
+            d = next((x for x in self.filas if x.get("numero_venta") == d.get("numero_venta")), d)
+        self.abrir_detalle(d)
+
     def _marcar_nc(self, d: dict) -> None:
         clasif = d.get("clasificacion")
         if not clasif:
             self.app.avisar("La venta no tiene clasificación. Edítela antes de marcar la NC.", error=True)
+            self._reabrir(d, recargar=False)
             return
         transferencia = settings.transferencia_al_hacer_nc(clasif)
         final = settings.DEPOSITO_FINAL.get(clasif, "Service Podesta")
@@ -286,7 +309,7 @@ class VistaLista:
                             f"Transferencia \"{transferencia}\" y depósito final \"{final}\" al sincronizar.")
         except FirebaseError as e:
             self.app.manejar_error(e)
-        self.recargar()
+        self._reabrir(d)
 
     def _reclamo_enviado(self, d: dict) -> None:
         mediacion = ft.TextField(label="N° de mediación / reclamo en ML (opcional)", autofocus=True,
@@ -304,9 +327,10 @@ class VistaLista:
                 self.app.avisar(f"Venta {d['numero_venta']}: reclamo enviado.")
             except FirebaseError as e:
                 self.app.manejar_error(e)
-            self.recargar()
+            self._reabrir(d)
 
-        dlg.actions = [ft.TextButton("Cancelar", on_click=lambda _: self.page.close(dlg)),
+        dlg.actions = [ft.TextButton("Cancelar", on_click=lambda _: (self.page.close(dlg),
+                                                                    self._reabrir(d, recargar=False))),
                        ft.FilledButton("Guardar", on_click=guardar)]
         self.page.open(dlg)
 
@@ -355,9 +379,10 @@ class VistaLista:
                 return
             self.page.close(dlg)
             self.app.avisar("Resultado registrado.")
-            self.recargar()
+            self._reabrir(d)
 
-        dlg.actions = [ft.TextButton("Cancelar", on_click=lambda _: self.page.close(dlg)),
+        dlg.actions = [ft.TextButton("Cancelar", on_click=lambda _: (self.page.close(dlg),
+                                                                    self._reabrir(d, recargar=False))),
                        ft.FilledButton("Guardar resultado", icon=ft.Icons.SAVE, on_click=guardar)]
         self.page.open(dlg)
 
