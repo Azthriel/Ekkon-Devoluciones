@@ -56,7 +56,7 @@ def test_estructura_y_busqueda():
 
 def test_completa_solo_celdas_vacias():
     h = hoja_ejemplo()
-    plan = P.planificar(h, [dev("2000018604612862")])
+    plan = P.planificar(h, [dev("2000018604612862")], hoy=HOY)
     escritas = dict(plan.celdas)
     assert not plan.filas_nuevas and not plan.conflictos
     assert escritas["G5"] == "Podesta" and escritas["O5"] == "N" and escritas["J5"] == "Podestá"
@@ -84,13 +84,13 @@ def test_reemplaza_pendiente_por_resultado():
 
 def test_fila_nueva():
     h = hoja_ejemplo()
-    plan = P.planificar(h, [dev("2000018700000001", codigo_producto="ABC-0001")])
+    plan = P.planificar(h, [dev("2000018700000001", codigo_producto="ABC-0001")], hoy=HOY)
     assert plan.fila_modelo == 5
     numero, valores = plan.filas_nuevas[0]
     assert numero == 6
     assert valores[ENCABEZADOS.index("N° Venta")] == "'2000018700000001"
     assert valores[ENCABEZADOS.index("N° Venta para copiar")] == "=\"'\"&E6"
-    assert valores[ENCABEZADOS.index("Fecha revisión")] == P.serial(HOY)
+    assert valores[ENCABEZADOS.index("Fecha revisión")] == HOY
     assert valores[ENCABEZADOS.index("SKU")] == "ABC-0001"
 
 
@@ -235,3 +235,48 @@ def test_enviados_para_marcar_realizada():
                         "Deposito final": "Service Podesta"}),
                 fila(**{"N° Venta": "2000000000000004", "Transferencia": "Realizada", "Deposito final": "Podestá"})])
     assert [i.venta[-1] for i in P.enviados(h)] == ["2", "1"]
+
+
+def test_fecha_revision_es_el_dia_en_que_entra_a_la_planilla():
+    h = hoja_ejemplo()   # fila 5 tiene A = 04/11 (fecha de carga escrita por una versión anterior)
+    hoy = dt.date(2026, 11, 5)
+    plan = P.planificar(h, [dev("2000018604612862"), dev("2000018700000001", _id="2000018700000001")], hoy=hoy)
+    assert dict(plan.celdas)["A5"] == hoy                          # se corrige a la fecha de hoy
+    assert plan.filas_nuevas[0][1][0] == hoy
+    assert set(plan.planilla_en) == {"2000018604612862", "2000018700000001"}
+    # Una vez guardada la fecha, ya no cambia
+    plan = P.planificar(h, [dev("2000018604612862", planilla_en="2026-11-04")], hoy=hoy)
+    assert "A5" not in dict(plan.celdas) and not plan.planilla_en
+    # Una fecha escrita a mano no se pisa
+    h2 = P.Hoja([ENCABEZADOS, fila(**{"N° Venta": "2000000000000001", "Fecha revisión": P.serial(dt.date(2026, 10, 1))})])
+    plan = P.planificar(h2, [dev("2000000000000001")], hoy=hoy)
+    assert "A2" not in dict(plan.celdas) and plan.conflictos
+
+
+class SesionTabla(SesionFalsa):
+    def request(self, metodo, url, **kw):
+        self.pedidos.append((metodo, url, kw))
+        if "/values/" in url and metodo == "GET":
+            return Respuesta({"values": self.filas})
+        if metodo == "GET":
+            return Respuesta({"properties": {"locale": "es_AR"}, "sheets": [{
+                "properties": {"sheetId": 7, "title": "Devoluciones", "gridProperties": {"rowCount": 1000}},
+                "tables": [{"tableId": "T1", "range": {"sheetId": 7, "startRowIndex": 0, "endRowIndex": 4,
+                                                       "startColumnIndex": 0, "endColumnIndex": 24}}]}]})
+        return Respuesta({})
+
+
+def test_con_tabla_agranda_la_tabla_y_escribe_fechas_como_texto_local():
+    h = hoja_ejemplo()
+    sesion = SesionTabla([h.encabezados] + h.filas)
+    p = Planilla("ID123", sesion=sesion)
+    hoja = p.leer()
+    plan = P.planificar(hoja, [dev("2000018700000001")], hoy=dt.date(2026, 11, 5))
+    p.aplicar(plan, hoja)
+    posts = [kw["json"] for m, u, kw in sesion.pedidos if m == "POST"]
+    req = posts[0]["requests"]
+    assert not any("copyPaste" in r for r in req)                   # con tabla no se copia formato
+    upd = [r["updateTable"] for r in req if "updateTable" in r][0]
+    assert upd["table"]["tableId"] == "T1" and upd["table"]["range"]["endRowIndex"] == 6
+    fila_nueva = posts[1]["data"][0]["values"][0]
+    assert fila_nueva[0] == "05/11/2026"

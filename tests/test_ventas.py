@@ -64,7 +64,7 @@ def test_planilla_se_completa_con_el_informe():
                 fila(**{"N° Venta": 2000017188543140.0})])                            # perdió el último dígito
     plan = P.planificar(h, [], cargar())
     escritas = dict(plan.celdas)
-    assert escritas["B2"] == P.serial(dt.date(2026, 8, 6))
+    assert escritas["B2"] == dt.date(2026, 8, 6)
     assert escritas["C2"] == "KOMMBERG AFILADOR (KB-AFM65)"
     assert escritas["G2"] == "Podesta" and "K2" not in escritas   # filas viejas: no se toca el costo
     assert "D2" not in escritas                                   # el SKU ya estaba
@@ -88,3 +88,17 @@ def test_columna_pedido_opcional():
     h = P.Hoja([ENCABEZADOS + ["N° Pedido"], ["", None, None, None, "2000017796698832"] + [None] * 20])
     escritas = dict(P.planificar(h, [], cargar()).celdas)
     assert escritas["Y2"] == "PED-1"
+
+
+def test_devolucion_vieja_cargada_con_carrito():
+    from test_planilla import ENCABEZADOS, fila, dev
+    h = P.Hoja([ENCABEZADOS, fila(**{"N° Venta": "2000014609910837", "Fecha revisión": P.serial(dt.date(2026, 11, 4))})])
+    plan = P.planificar(h, [dev("2000014609910837", _id="2000014609910837")], cargar(), hoy=dt.date(2026, 11, 5))
+    escritas = dict(plan.celdas)
+    assert plan.correcciones() == [("E2", "'2000018016486734")]
+    assert escritas["C2"] == "KOMMBERG CEPILLADORA (KB-CE650)" and escritas["G2"] == "Full"
+    assert escritas["A2"] == dt.date(2026, 11, 5)
+    # si no estaba en la planilla, la fila nueva lleva el Venta #
+    h = P.Hoja([ENCABEZADOS])
+    plan = P.planificar(h, [dev("2000014609910837")], cargar())
+    assert plan.filas_nuevas[0][1][4] == "'2000018016486734"

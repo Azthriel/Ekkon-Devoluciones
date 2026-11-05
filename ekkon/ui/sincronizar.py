@@ -1,6 +1,8 @@
 """Sincronización de devoluciones con la planilla, con resumen previo y confirmación."""
 from __future__ import annotations
 
+import datetime
+
 import flet as ft
 
 from ..firebase import FirebaseError
@@ -83,6 +85,12 @@ def sincronizar(app, al_terminar=None) -> None:
         except SheetsError as e:
             app.avisar(str(e), error=True)
             return
+        hoy = datetime.date.today().isoformat()
+        for doc_id in plan.planilla_en:
+            try:
+                app.devs.actualizar(doc_id, {"planilla_en": hoy})
+            except FirebaseError:
+                pass
         extra = f" y {len(correcciones)} N° Venta corregido(s)" if correcciones and corregir.value else ""
         app.avisar(f"Planilla actualizada: {len(plan.filas_nuevas)} fila(s) nueva(s), "
                    f"{len(plan.celdas)} celda(s) completada(s){extra}.")

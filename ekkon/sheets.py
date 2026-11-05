@@ -5,6 +5,7 @@ programa); nunca va dentro del .exe ni en Firestore.
 """
 from __future__ import annotations
 
+import datetime as dt
 import json
 import re
 import shutil
@@ -122,41 +123,81 @@ class Planilla:
                               "dateTimeRenderOption": "SERIAL_NUMBER"})
         return Hoja(d.get("values", []))
 
-    def escribir(self, celdas: list[tuple[str, object]]) -> None:
+    # ------------------------------------------------------------ estructura de la hoja
+
+    def info(self) -> dict:
+        """sheetId, filas de la grilla, locale y la tabla (si la hoja tiene una tabla de Sheets)."""
+        gid = self.gid()
+        try:
+            d = self._req("GET", "", params={"fields": "properties.locale,sheets(properties(sheetId,gridProperties),"
+                                                       "tables(tableId,name,range))"})
+        except SheetsError:   # API sin soporte de tablas
+            d = self._req("GET", "", params={"fields": "properties.locale,sheets.properties(sheetId,gridProperties)"})
+        salida = {"gid": gid, "filas": 0, "locale": d.get("properties", {}).get("locale", ""), "tabla": None}
+        for sh in d.get("sheets", []):
+            if sh["properties"]["sheetId"] != gid:
+                continue
+            salida["filas"] = sh["properties"].get("gridProperties", {}).get("rowCount", 0)
+            tablas = sh.get("tables") or []
+            # La tabla de devoluciones es la que empieza en la fila de encabezados (fila 1)
+            tablas.sort(key=lambda t: t.get("range", {}).get("startRowIndex", 0))
+            if tablas:
+                salida["tabla"] = tablas[0]
+        return salida
+
+    @staticmethod
+    def formato_fecha(locale: str):
+        mes_primero = (locale or "").lower().startswith(("en_us", "en-us", "en_ph", "en_ca"))
+
+        def fmt(v):
+            if isinstance(v, dt.date):
+                return f"{v.month}/{v.day}/{v.year}" if mes_primero else f"{v.day:02d}/{v.month:02d}/{v.year}"
+            return v
+        return fmt
+
+    def escribir(self, celdas: list[tuple[str, object]], fmt=None) -> None:
         if not celdas:
             return
-        data = [{"range": self._rango(a1), "values": [[v]]} for a1, v in celdas]
+        fmt = fmt or self.formato_fecha(self.info()["locale"])
+        data = [{"range": self._rango(a1), "values": [[fmt(v)]]} for a1, v in celdas]
         for i in range(0, len(data), 500):
             self._req("POST", "/values:batchUpdate",
                       json={"valueInputOption": "USER_ENTERED", "data": data[i:i + 500]})
 
-    def preparar_filas(self, modelo: int, desde: int, hasta: int, ancho: int) -> None:
-        """Copia formato y listas desplegables de la fila modelo a las filas nuevas."""
-        gid = self.gid()
-        origen = {"sheetId": gid, "startRowIndex": modelo - 1, "endRowIndex": modelo,
-                  "startColumnIndex": 0, "endColumnIndex": ancho}
-        destino = {"sheetId": gid, "startRowIndex": desde - 1, "endRowIndex": hasta,
-                   "startColumnIndex": 0, "endColumnIndex": ancho}
-        pedidos = [{"copyPaste": {"source": origen, "destination": destino, "pasteType": t}}
-                   for t in ("PASTE_FORMAT", "PASTE_DATA_VALIDATION")]
-        # Asegura que existan filas suficientes en la hoja
-        d = self._req("GET", "", params={"fields": "sheets.properties(sheetId,gridProperties)"})
-        for s in d.get("sheets", []):
-            if s["properties"]["sheetId"] == gid:
-                filas = s["properties"]["gridProperties"]["rowCount"]
-                if hasta > filas:
-                    pedidos.insert(0, {"appendDimension": {"sheetId": gid, "dimension": "ROWS",
-                                                           "length": hasta - filas + 50}})
-        self._req("POST", ":batchUpdate", json={"requests": pedidos})
-
     def aplicar(self, plan: Plan, hoja: Hoja) -> None:
+        info = self.info()
+        fmt = self.formato_fecha(info["locale"])
+        tabla = info["tabla"]
+        pedidos: list[dict] = []
+        ultima_fila = hoja.numero_fila(hoja.ultima_con_venta())
         if plan.filas_nuevas:
-            desde = plan.filas_nuevas[0][0]
-            hasta = plan.filas_nuevas[-1][0]
-            if plan.fila_modelo:
-                self.preparar_filas(plan.fila_modelo, desde, hasta, len(hoja.encabezados))
+            desde, hasta = plan.filas_nuevas[0][0], plan.filas_nuevas[-1][0]
+            ultima_fila = max(ultima_fila, hasta)
+            if hasta > info["filas"]:
+                pedidos.append({"appendDimension": {"sheetId": info["gid"], "dimension": "ROWS",
+                                                    "length": hasta - info["filas"] + 50}})
+            if not tabla and plan.fila_modelo:
+                # Sin tabla: se copian formato y listas desplegables de la fila anterior
+                ancho = len(hoja.encabezados)
+                origen = {"sheetId": info["gid"], "startRowIndex": plan.fila_modelo - 1,
+                          "endRowIndex": plan.fila_modelo, "startColumnIndex": 0, "endColumnIndex": ancho}
+                destino = {"sheetId": info["gid"], "startRowIndex": desde - 1, "endRowIndex": hasta,
+                           "startColumnIndex": 0, "endColumnIndex": ancho}
+                pedidos += [{"copyPaste": {"source": origen, "destination": destino, "pasteType": t}}
+                            for t in ("PASTE_FORMAT", "PASTE_DATA_VALIDATION")]
+        if tabla:
+            rango = dict(tabla["range"])
+            if ultima_fila > rango.get("endRowIndex", 0):
+                # Se agranda la tabla para que las filas nuevas (y las que quedaron afuera) sean parte de ella
+                rango["endRowIndex"] = ultima_fila
+                pedidos.append({"updateTable": {"table": {"tableId": tabla["tableId"], "range": rango},
+                                                "fields": "range"}})
+        if pedidos:
+            self._req("POST", ":batchUpdate", json={"requests": pedidos})
+        if plan.filas_nuevas:
             fin = letra_columna(len(hoja.encabezados) - 1)
-            data = [{"range": self._rango(f"A{n}:{fin}{n}"), "values": [["" if v is None else v for v in vals]]}
+            data = [{"range": self._rango(f"A{n}:{fin}{n}"),
+                     "values": [["" if v is None else fmt(v) for v in vals]]}
                     for n, vals in plan.filas_nuevas]
             self._req("POST", "/values:batchUpdate", json={"valueInputOption": "USER_ENTERED", "data": data})
-        self.escribir(plan.celdas)
+        self.escribir(plan.celdas, fmt)

@@ -126,10 +126,24 @@ class App:
     def _migraciones(self) -> None:
         try:
             n = self.devs.migrar_service_interno()
+            if n:
+                self.avisar(f"Se cambió \"Service Interno\" por \"Service\" en {n} devolución(es).")
+            # Devoluciones cargadas con el ID Carrito en versiones anteriores: pasan al Venta #
+            movidas = 0
+            for d in self.devs.recientes(1000):
+                if d.get("producto") or d.get("carrito"):
+                    continue
+                r = self.indice.buscar(d["numero_venta"])
+                if r.tipo == "carrito" and r.venta:
+                    v = r.venta
+                    extra = {"producto": v.producto, "fecha_venta": v.fecha.isoformat() if v.fecha else "",
+                             "sucursal": v.sucursal, "pedido": v.pedido, "precio_unitario": v.precio}
+                    if self.devs.mover(d["numero_venta"], v.venta, extra):
+                        movidas += 1
+            if movidas:
+                self.avisar(f"{movidas} devolución(es) cargadas con el ID Carrito pasaron a su Venta #.")
         except FirebaseError:
             return
-        if n:
-            self.avisar(f"Se cambió \"Service Interno\" por \"Service\" en {n} devolución(es).")
 
     def salir(self, mensaje: str | None = None) -> None:
         local.borrar_sesion()

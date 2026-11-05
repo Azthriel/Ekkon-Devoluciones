@@ -161,6 +161,21 @@ class Devoluciones:
                 cambiadas.add(d["_id"])
         return len(cambiadas)
 
+    def mover(self, viejo: str, nuevo: str, extra: dict | None = None) -> bool:
+        """Pasa una devolución cargada con el ID Carrito al documento del Venta # (con sus fotos)."""
+        d = self.obtener(viejo)
+        if not d or self.obtener(nuevo):
+            return False
+        datos = {k: v for k, v in d.items() if k != "_id"}
+        datos.update(extra or {})
+        datos.update({"numero_venta": nuevo, "carrito": viejo,
+                      "actualizado_en": dt.datetime.now(dt.timezone.utc)})
+        fotos = self.fotos(viejo)
+        self.fs.crear(COL_DEV, nuevo, datos)
+        self.reemplazar_fotos(nuevo, fotos, cantidad_anterior=0)
+        self.borrar(viejo, int(d.get("fotos", 0)))
+        return True
+
     def borrar(self, numero: str, cantidad_fotos: int) -> None:
         for i in range(1, cantidad_fotos + 1):
             try:

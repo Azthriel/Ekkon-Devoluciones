@@ -162,12 +162,16 @@ class Hoja:
 
 # ---------------------------------------------------------------- devolución -> valores
 
-def valores_de(dev: dict) -> dict:
-    """Valores de la planilla que el programa conoce para una devolución."""
+def valores_de(dev: dict, hoy: dt.date | None = None) -> dict:
+    """Valores de la planilla que el programa conoce para una devolución.
+
+    Fecha revisión = el día en que la devolución se escribe en la planilla (queda guardado en "planilla_en").
+    """
     v: dict = {}
-    cargado = dev.get("cargado_en")
-    if isinstance(cargado, dt.datetime):
-        v[C_FECHA_REV] = serial(cargado.astimezone().date())
+    if dev.get("planilla_en"):
+        v[C_FECHA_REV] = dt.date.fromisoformat(dev["planilla_en"])
+    else:
+        v[C_FECHA_REV] = hoy or dt.date.today()
     if dev.get("codigo_producto"):
         v[C_SKU] = dev["codigo_producto"]
     v[C_VENTA] = dev["numero_venta"]
@@ -203,7 +207,7 @@ def valores_de_informe(info) -> dict:
         return {}
     v: dict = {}
     if info.fecha:
-        v[C_FECHA_COMPRA] = serial(info.fecha)
+        v[C_FECHA_COMPRA] = info.fecha
     if info.producto:
         v[C_ARTICULO] = info.producto
     if info.codigo:
@@ -227,6 +231,10 @@ def para_escribir(columna: str, valor):
 
 
 def iguales(a, b) -> bool:
+    if isinstance(b, dt.date):
+        if isinstance(a, dt.date):
+            return a == b
+        return fecha_de_serial(a) == b
     if isinstance(a, (int, float)) and isinstance(b, (int, float)) and not isinstance(a, bool):
         return abs(float(a) - float(b)) < 0.005
     if isinstance(b, (int, float)) and isinstance(a, str):
@@ -250,6 +258,8 @@ class Plan:
     completadas_informe: set = field(default_factory=set)   # filas que solo se completan con el informe
     # Filas donde en "N° Venta" hay un ID Carrito: (A1, carrito, [ventas])
     carritos: list[tuple[str, str, list[str]]] = field(default_factory=list)
+    # Devoluciones (id del documento) que se escriben por primera vez: se les guarda la fecha
+    planilla_en: list[str] = field(default_factory=list)
 
     @property
     def vacio(self) -> bool:
@@ -260,7 +270,8 @@ class Plan:
         return [(a1, "'" + ventas[0]) for a1, _c, ventas in self.carritos if len(ventas) == 1]
 
 
-def _completar_fila(plan: Plan, hoja: Hoja, fila0: int, valores: dict, venta: str, reportar: bool) -> None:
+def _completar_fila(plan: Plan, hoja: Hoja, fila0: int, valores: dict, venta: str, reportar: bool,
+                    pisar: dict | None = None) -> None:
     numero = hoja.numero_fila(fila0)
     for col, val in valores.items():
         i = hoja.indice(col)
@@ -271,21 +282,27 @@ def _completar_fila(plan: Plan, hoja: Hoja, fila0: int, valores: dict, venta: st
         actual = hoja.valor(fila0, col)
         if col == C_VENTA or iguales(actual, val):
             continue
-        if vacia(actual) or normalizar(actual) in REEMPLAZABLES.get(col, ()):
+        se_pisa = any(iguales(actual, x) for x in (pisar or {}).get(col, ()))
+        if vacia(actual) or normalizar(actual) in REEMPLAZABLES.get(col, ()) or se_pisa:
             plan.celdas.append((f"{letra_columna(i)}{numero}", para_escribir(col, val)))
             plan.actualizadas.add(venta)
         elif reportar and col not in SOLO_INICIAL:
             plan.conflictos.append((venta, col, actual, val))
 
 
-def planificar(hoja: Hoja, devoluciones: list[dict], ventas: dict | None = None) -> Plan:
+def planificar(hoja: Hoja, devoluciones: list[dict], ventas: dict | None = None,
+               hoy: dt.date | None = None) -> Plan:
     """ventas: índice del informe {Venta #: ventas.Venta} (opcional)."""
+    from .ventas import carritos as _carritos
     ventas = ventas or {}
+    hoy = hoy or dt.date.today()
+    por_carrito = _carritos(ventas) if ventas else {}
     plan = Plan()
     ultima = hoja.ultima_con_venta()
     plan.fila_modelo = hoja.numero_fila(ultima) if ultima >= 0 else None
     siguiente = hoja.numero_fila(ultima + 1)
     ancho = len(hoja.encabezados)
+    i_venta = hoja.indice(C_VENTA)
     ordenadas = sorted(devoluciones, key=lambda d: d.get("cargado_en") or dt.datetime.min.replace(
         tzinfo=dt.timezone.utc))
     tocadas: set[int] = set()
@@ -293,16 +310,30 @@ def planificar(hoja: Hoja, devoluciones: list[dict], ventas: dict | None = None)
         venta = dev.get("numero_venta")
         if not venta:
             continue
-        valores = valores_de(dev)
+        doc_id = dev.get("_id") or venta
+        carrito = ""
+        if venta not in ventas and len(por_carrito.get(venta, [])) == 1:
+            # Devolución vieja cargada con el ID Carrito: en la planilla va el Venta #
+            carrito, venta = venta, por_carrito[venta][0]
+        valores = valores_de(dev, hoy)
+        valores[C_VENTA] = venta
         info = ventas.get(venta)
+        carrito = carrito or (info.carrito if info else "")
+        if info and info.deposito:
+            valores.pop(C_DEP_ORIGEN, None)   # la Sucursal del informe manda sobre lo cargado a mano
         informe = {k: v for k, v in valores_de_informe(info).items() if k not in valores}
+        # Las filas escritas antes con la fecha de carga pasan a tener la fecha en que entran a la planilla
+        pisar = {}
+        cargado = dev.get("cargado_en")
+        if not dev.get("planilla_en") and isinstance(cargado, dt.datetime):
+            pisar[C_FECHA_REV] = {cargado.astimezone().date()}
         fila0 = hoja.buscar(venta)
-        if fila0 is None and info is not None and info.carrito:
-            # La fila existe pero tiene el ID Carrito en "N° Venta": se usa esa fila y se propone corregirla
-            fila0 = hoja.buscar(info.carrito)
+        if fila0 is None and carrito:
+            fila0 = hoja.buscar(carrito)
             if fila0 is not None:
-                i_v = hoja.indice(C_VENTA)
-                plan.carritos.append((f"{letra_columna(i_v)}{hoja.numero_fila(fila0)}", info.carrito, [venta]))
+                plan.carritos.append((f"{letra_columna(i_venta)}{hoja.numero_fila(fila0)}", carrito, [venta]))
+        if not dev.get("planilla_en"):
+            plan.planilla_en.append(doc_id)
         if fila0 is None:
             nueva = [None] * ancho
             for col, val in (valores | informe).items():
@@ -313,22 +344,19 @@ def planificar(hoja: Hoja, devoluciones: list[dict], ventas: dict | None = None)
                     continue
                 nueva[i] = para_escribir(col, val)
             i_copiar = hoja.indice(C_VENTA_COPIAR)
-            i_venta = hoja.indice(C_VENTA)
             if i_copiar is not None:
                 nueva[i_copiar] = f"=\"'\"&{letra_columna(i_venta)}{siguiente}"
             plan.filas_nuevas.append((siguiente, nueva))
             siguiente += 1
             continue
         tocadas.add(fila0)
-        _completar_fila(plan, hoja, fila0, valores, venta, reportar=True)
+        _completar_fila(plan, hoja, fila0, valores, venta, reportar=True, pisar=pisar)
         _completar_fila(plan, hoja, fila0, informe, venta, reportar=False)
 
     if ventas:
         # Filas cargadas a mano: se completan con el informe y se detectan los ID Carrito
-        from .ventas import carritos as _carritos, prefijos as _prefijos
+        from .ventas import prefijos as _prefijos
         por_prefijo = _prefijos(ventas)
-        por_carrito = _carritos(ventas)
-        i_venta = hoja.indice(C_VENTA)
         for fila0 in range(len(hoja.filas)):
             if fila0 in tocadas:
                 continue
