@@ -15,6 +15,10 @@ Programa de Windows para cargar y gestionar las devoluciones de Mercado Libre.
 - Bloqueo de versiones viejas desde *Ajustes* (versión mínima permitida).
 - **Planilla (0.2)**: *Sincronizar planilla* completa la planilla de Google Sheets con una cuenta de servicio.
   Solo completa celdas vacías y agrega ventas nuevas; nunca pisa lo escrito a mano (salvo *Pendiente* → resultado).
+- **Informe de ventas (0.3)**: en *Ajustes* se importa el CSV "Ventas ML para APP" de Virtual Seller. Se guarda en
+  Firestore repartido en 100 documentos (`ventas_idx`), se conservan 180 días. Con eso la carga convierte el ID Carrito
+  en Venta #, muestra el producto y completa el SKU; y la sincronización completa fecha de compra, artículo, SKU,
+  depósito de origen (Sucursal) y costo, y detecta filas con el ID Carrito en "N° Venta".
 - **Emails**: arma la solicitud de transferencia con las filas que tienen Transferencia = "A la espera de
   movimiento". Origen siempre Service Podestá (ahí entra la unidad al hacer la NC); destino según "Deposito final".
   Incluye *Abrir en Gmail* y *Marcar como enviado*.

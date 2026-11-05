@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import flet as ft
 
-from .. import sheets
+from .. import sheets, ventas
 from ..firebase import FirebaseError
 from ..version import VERSION
 from .comun import seccion, tarjeta, titulo
@@ -34,6 +34,50 @@ class VistaAjustes:
         estado_clave = ft.Text()
         selector = ft.FilePicker()
         self.page.overlay.append(selector)
+        selector_csv = ft.FilePicker()
+        self.page.overlay.append(selector_csv)
+        estado_informe = ft.Text(size=13)
+        progreso_informe = ft.ProgressBar(visible=False)
+
+        def pintar_informe():
+            try:
+                m = self.app.indice.meta()
+            except FirebaseError:
+                m = {}
+            if m.get("importado_en"):
+                desde, hasta = m.get("desde", ""), m.get("hasta", "")
+                f = lambda x: "/".join(reversed(x.split("-"))) if x else "—"  # noqa: E731
+                estado_informe.value = (f"Último informe: {m['importado_en'].astimezone().strftime('%d/%m/%Y %H:%M')} "
+                                        f"— {m.get('ventas_informe', 0):,} ventas del {f(desde)} al {f(hasta)}. "
+                                        f"En el índice hay {m.get('ventas_total', 0):,} ventas "
+                                        f"(se conservan {ventas.DIAS_A_CONSERVAR} días).").replace(",", ".")
+                estado_informe.color = None
+            else:
+                estado_informe.value = "Todavía no se importó ningún informe."
+                estado_informe.color = ft.Colors.ERROR
+
+        def csv_elegido(e: ft.FilePickerResultEvent):
+            if not e.files:
+                return
+            progreso_informe.visible = True
+            estado_informe.value = "Leyendo el informe…"
+            self.page.update()
+            try:
+                with open(e.files[0].path, "rb") as fh:
+                    nuevas = ventas.leer_csv(fh.read())
+                estado_informe.value = f"Guardando {len(nuevas):,} ventas…".replace(",", ".")
+                self.page.update()
+                self.app.indice.importar(nuevas, self.app.usuario.get("email", ""))
+                self.app.avisar("Informe de ventas importado.")
+            except (ValueError, OSError) as err:
+                self.app.avisar(str(err), error=True)
+            except FirebaseError as err:
+                self.app.manejar_error(err)
+            progreso_informe.visible = False
+            pintar_informe()
+            self.page.update()
+
+        selector_csv.on_result = csv_elegido
 
         def pintar_clave():
             info = sheets.leer_clave()
@@ -84,6 +128,7 @@ class VistaAjustes:
                 self.app.manejar_error(err)
 
         pintar_clave()
+        pintar_informe()
         return ft.Column([
             titulo("Ajustes", f"Versión instalada: {VERSION}"),
             tarjeta(ft.Column([seccion("Reclamos"), claude], spacing=14)),
@@ -99,6 +144,17 @@ class VistaAjustes:
                         ft.OutlinedButton("Probar conexión", icon=ft.Icons.WIFI_TETHERING, on_click=probar),
                         estado_clave], wrap=True, spacing=12),
             ], spacing=14)),
+            tarjeta(ft.Column([
+                seccion("Informe de ventas de Virtual Seller"),
+                ft.Text("Informes → \"Ventas ML para APP\" → Exportar detalles → UTF-8 y .csv. "
+                        "Se puede importar cuantas veces quiera: se suman las ventas nuevas.", size=12,
+                        color=ft.Colors.ON_SURFACE_VARIANT),
+                ft.Row([ft.FilledTonalButton("Importar informe .csv", icon=ft.Icons.UPLOAD_FILE,
+                                             on_click=lambda _: selector_csv.pick_files(
+                                                 dialog_title="Elegir el informe exportado de Virtual Seller",
+                                                 allowed_extensions=["csv"]))]),
+                progreso_informe, estado_informe,
+            ], spacing=12)),
             tarjeta(ft.Column([seccion("Emails"), para_transf], spacing=14)),
             tarjeta(ft.Column([seccion("Actualizaciones"), ft.Row([ultima, minima], spacing=16), descarga],
                               spacing=14)),

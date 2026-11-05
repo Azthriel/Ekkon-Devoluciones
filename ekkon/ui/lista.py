@@ -160,6 +160,9 @@ class VistaLista:
                     dato("N° de mediación", d.get("numero_mediacion")),
                     dato("Nota de crédito", "Realizada" if d.get("nc_realizada") else "Pendiente")],
                    spacing=30, wrap=True),
+            ft.Row([dato("Producto", d.get("producto")), dato("Pedido", d.get("pedido")),
+                    dato("Fecha de venta", fecha_corta(d.get("fecha_venta")) if d.get("fecha_venta") else None),
+                    dato("ID Carrito", d.get("carrito"))], spacing=30, wrap=True),
             dato("Problema informado por el comprador", d.get("problema_comprador")),
             dato("Estado en que llegó", d.get("descripcion")),
         ]

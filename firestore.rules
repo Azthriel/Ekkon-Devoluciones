@@ -35,6 +35,12 @@ service cloud.firestore {
       allow write: if admin();
     }
 
+    // Índice del informe de ventas de Virtual Seller (lo importa el administrador)
+    match /ventas_idx/{parte} {
+      allow read: if activo();
+      allow write: if admin();
+    }
+
     match /devoluciones/{venta} {
       allow read: if activo();
       allow create: if activo()

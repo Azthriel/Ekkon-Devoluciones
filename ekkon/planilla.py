@@ -32,6 +32,13 @@ C_MEDIACION = "N° Mediación"
 C_ESTADO1 = "Estado (1er reclamo)"
 C_MONTO = "Monto Reintegrado"
 C_MOVIMIENTO = "N° Movimiento"
+C_COSTO = "Costo del producto"
+# Columna opcional: si la planilla tiene una columna con alguno de estos nombres, se completa el pedido
+C_PEDIDO = "N° Pedido"
+ALIAS = {C_PEDIDO: ("N° Pedido", "Pedido", "Nro Pedido", "N° de Pedido", "Nro. Pedido")}
+
+# Datos que salen del informe de ventas: solo completan celdas vacías y nunca se reportan como diferencia
+COLUMNAS_INFORME = (C_FECHA_COMPRA, C_ARTICULO, C_SKU, C_DEP_ORIGEN, C_COSTO, C_PEDIDO)
 
 # Valores de la planilla que el programa puede reemplazar aunque la celda no esté vacía
 REEMPLAZABLES = {C_ESTADO1: {"pendiente"}, C_CLASIF: {"service interno"}, C_CONDICION: {"service interno"}}
@@ -122,7 +129,11 @@ class Hoja:
                              ". Revise que la primera fila tenga los encabezados.")
 
     def indice(self, columna: str) -> int | None:
-        return self.col.get(normalizar(columna))
+        for nombre in ALIAS.get(columna, (columna,)):
+            i = self.col.get(normalizar(nombre))
+            if i is not None:
+                return i
+        return None
 
     def valor(self, fila0: int, columna: str):
         i = self.indice(columna)
@@ -186,6 +197,26 @@ def valores_de(dev: dict) -> dict:
     return v
 
 
+def valores_de_informe(info) -> dict:
+    """Valores de la planilla que salen del informe de ventas (objeto ventas.Venta)."""
+    if info is None:
+        return {}
+    v: dict = {}
+    if info.fecha:
+        v[C_FECHA_COMPRA] = serial(info.fecha)
+    if info.producto:
+        v[C_ARTICULO] = info.producto
+    if info.codigo:
+        v[C_SKU] = info.codigo
+    if info.deposito:
+        v[C_DEP_ORIGEN] = info.deposito
+    if info.precio is not None:
+        v[C_COSTO] = info.precio
+    if info.pedido:
+        v[C_PEDIDO] = info.pedido
+    return v
+
+
 def para_escribir(columna: str, valor):
     """Valor tal como se envía con USER_ENTERED."""
     if columna == C_VENTA:
@@ -216,13 +247,40 @@ class Plan:
     actualizadas: set = field(default_factory=set)
     conflictos: list[tuple[str, str, object, object]] = field(default_factory=list)  # venta, col, hoja, app
     sin_columna: set = field(default_factory=set)
+    completadas_informe: set = field(default_factory=set)   # filas que solo se completan con el informe
+    # Filas donde en "N° Venta" hay un ID Carrito: (A1, carrito, [ventas])
+    carritos: list[tuple[str, str, list[str]]] = field(default_factory=list)
 
     @property
     def vacio(self) -> bool:
         return not self.celdas and not self.filas_nuevas
 
+    def correcciones(self) -> list[tuple[str, str]]:
+        """Reemplazos de ID Carrito por Venta # cuando el carrito tiene una sola venta."""
+        return [(a1, "'" + ventas[0]) for a1, _c, ventas in self.carritos if len(ventas) == 1]
 
-def planificar(hoja: Hoja, devoluciones: list[dict]) -> Plan:
+
+def _completar_fila(plan: Plan, hoja: Hoja, fila0: int, valores: dict, venta: str, reportar: bool) -> None:
+    numero = hoja.numero_fila(fila0)
+    for col, val in valores.items():
+        i = hoja.indice(col)
+        if i is None:
+            if col != C_PEDIDO:
+                plan.sin_columna.add(col)
+            continue
+        actual = hoja.valor(fila0, col)
+        if col == C_VENTA or iguales(actual, val):
+            continue
+        if vacia(actual) or normalizar(actual) in REEMPLAZABLES.get(col, ()):
+            plan.celdas.append((f"{letra_columna(i)}{numero}", para_escribir(col, val)))
+            plan.actualizadas.add(venta)
+        elif reportar and col not in SOLO_INICIAL:
+            plan.conflictos.append((venta, col, actual, val))
+
+
+def planificar(hoja: Hoja, devoluciones: list[dict], ventas: dict | None = None) -> Plan:
+    """ventas: índice del informe {Venta #: ventas.Venta} (opcional)."""
+    ventas = ventas or {}
     plan = Plan()
     ultima = hoja.ultima_con_venta()
     plan.fila_modelo = hoja.numero_fila(ultima) if ultima >= 0 else None
@@ -230,18 +288,28 @@ def planificar(hoja: Hoja, devoluciones: list[dict]) -> Plan:
     ancho = len(hoja.encabezados)
     ordenadas = sorted(devoluciones, key=lambda d: d.get("cargado_en") or dt.datetime.min.replace(
         tzinfo=dt.timezone.utc))
+    tocadas: set[int] = set()
     for dev in ordenadas:
         venta = dev.get("numero_venta")
         if not venta:
             continue
         valores = valores_de(dev)
+        info = ventas.get(venta)
+        informe = {k: v for k, v in valores_de_informe(info).items() if k not in valores}
         fila0 = hoja.buscar(venta)
+        if fila0 is None and info is not None and info.carrito:
+            # La fila existe pero tiene el ID Carrito en "N° Venta": se usa esa fila y se propone corregirla
+            fila0 = hoja.buscar(info.carrito)
+            if fila0 is not None:
+                i_v = hoja.indice(C_VENTA)
+                plan.carritos.append((f"{letra_columna(i_v)}{hoja.numero_fila(fila0)}", info.carrito, [venta]))
         if fila0 is None:
             nueva = [None] * ancho
-            for col, val in valores.items():
+            for col, val in (valores | informe).items():
                 i = hoja.indice(col)
                 if i is None:
-                    plan.sin_columna.add(col)
+                    if col != C_PEDIDO:
+                        plan.sin_columna.add(col)
                     continue
                 nueva[i] = para_escribir(col, val)
             i_copiar = hoja.indice(C_VENTA_COPIAR)
@@ -251,20 +319,39 @@ def planificar(hoja: Hoja, devoluciones: list[dict]) -> Plan:
             plan.filas_nuevas.append((siguiente, nueva))
             siguiente += 1
             continue
-        numero = hoja.numero_fila(fila0)
-        for col, val in valores.items():
-            i = hoja.indice(col)
-            if i is None:
-                plan.sin_columna.add(col)
+        tocadas.add(fila0)
+        _completar_fila(plan, hoja, fila0, valores, venta, reportar=True)
+        _completar_fila(plan, hoja, fila0, informe, venta, reportar=False)
+
+    if ventas:
+        # Filas cargadas a mano: se completan con el informe y se detectan los ID Carrito
+        from .ventas import carritos as _carritos, prefijos as _prefijos
+        por_prefijo = _prefijos(ventas)
+        por_carrito = _carritos(ventas)
+        i_venta = hoja.indice(C_VENTA)
+        for fila0 in range(len(hoja.filas)):
+            if fila0 in tocadas:
                 continue
-            actual = hoja.valor(fila0, col)
-            if col == C_VENTA or iguales(actual, val):
+            celda = hoja.valor(fila0, C_VENTA)
+            numero = venta_de_celda(celda)
+            if not numero:
                 continue
-            if vacia(actual) or normalizar(actual) in REEMPLAZABLES.get(col, ()):
-                plan.celdas.append((f"{letra_columna(i)}{numero}", para_escribir(col, val)))
-                plan.actualizadas.add(venta)
-            elif col not in SOLO_INICIAL:
-                plan.conflictos.append((venta, col, actual, val))
+            info = ventas.get(numero)
+            if info is None and isinstance(celda, float):
+                encontrada = por_prefijo.get(numero[:15])
+                info = ventas.get(encontrada) if encontrada else None
+            if info is None and numero in por_carrito:
+                plan.carritos.append((f"{letra_columna(i_venta)}{hoja.numero_fila(fila0)}", numero,
+                                      por_carrito[numero]))
+                continue
+            if info is None:
+                continue
+            antes = len(plan.celdas)
+            # En las filas viejas no se toca el costo: él lo completa junto con el costo de envío
+            datos = {k: v for k, v in valores_de_informe(info).items() if k != C_COSTO}
+            _completar_fila(plan, hoja, fila0, datos, info.venta, reportar=False)
+            if len(plan.celdas) > antes:
+                plan.completadas_informe.add(info.venta)
     return plan
 
 

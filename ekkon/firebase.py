@@ -229,6 +229,27 @@ class Firestore:
                      json={"fields": {k: codificar(v) for k, v in datos.items()}})
         return documento_a_dict(d)
 
+    def obtener_varios(self, rutas: list[str]) -> list[dict | None]:
+        """Lee varios documentos en un solo pedido (batchGet). Devuelve None para los que no existen."""
+        nombres = [f"{self.raiz}/{r.strip('/')}" for r in rutas]
+        salida: dict[str, dict | None] = {}
+        for i in range(0, len(nombres), 100):
+            filas = _post(f"{self.base}:batchGet", headers=self._h(), json={"documents": nombres[i:i + 100]})
+            for f in filas:
+                if "found" in f:
+                    salida[f["found"]["name"]] = documento_a_dict(f["found"])
+                elif "missing" in f:
+                    salida[f["missing"]] = None
+        return [salida.get(n) for n in nombres]
+
+    def guardar_varios(self, documentos: list[tuple[str, dict]], por_pedido: int = 25) -> None:
+        """Crea o reemplaza varios documentos con commits agrupados."""
+        for i in range(0, len(documentos), por_pedido):
+            writes = [{"update": {"name": f"{self.raiz}/{r.strip('/')}",
+                                  "fields": {k: codificar(v) for k, v in datos.items()}}}
+                      for r, datos in documentos[i:i + por_pedido]]
+            _post(f"{self.base}:commit", headers=self._h(), json={"writes": writes})
+
     def borrar(self, ruta: str) -> None:
         _request("DELETE", f"{self.base}/{self._ruta(ruta)}", headers=self._h())
 

@@ -8,6 +8,7 @@ import flet as ft
 
 from .. import local, settings
 from ..datos import ConfigApp, Devoluciones, Usuarios
+from ..ventas import Indice
 from ..firebase import Auth, FirebaseError, Firestore, Sesion
 from ..version import VERSION, comparar
 from .comun import COLOR_SEMILLA, tarjeta
@@ -26,6 +27,7 @@ class App:
         self.devs = Devoluciones(self.fs)
         self.usuarios = Usuarios(self.fs)
         self.cfg = ConfigApp(self.fs)
+        self.indice = Indice(self.fs)
         self.selector_fotos = ft.FilePicker()
         self._vigilante: threading.Thread | None = None
         self._seccion_actual = 0

@@ -8,6 +8,7 @@ import flet as ft
 from .. import local, settings
 from ..datos import armar_prompt, leer_respuesta_claude, validar_numero_venta
 from ..firebase import FirebaseError
+from ..ventas import Venta
 from ..fotos import comprimir, miniatura_b64
 from .comun import seccion, tarjeta, titulo
 
@@ -26,6 +27,8 @@ class VistaCarga:
         self.fotos_cambiaron = False
         self.cant_fotos_original = int((existente or {}).get("fotos", 0))
         self.vence = (existente or {}).get("fecha_vencimiento") or dt.date.today().isoformat()
+        self.venta_info: Venta | None = None
+        self._ultimo_buscado = ""
         self._armar_controles()
         if self.editando:
             self._cargar_existente()
@@ -37,6 +40,7 @@ class VistaCarga:
             label="Número de venta *", hint_text="2000012345678901", width=320,
             prefix_icon=ft.Icons.TAG, on_change=self._validar_numero, on_blur=self._verificar_duplicado,
             read_only=self.editando)
+        self.info_venta = ft.Container(visible=False, border_radius=10, padding=ft.padding.symmetric(10, 14))
         self.btn_vence = ft.OutlinedButton(icon=ft.Icons.EVENT, on_click=self._elegir_fecha, height=48)
         self.selector_fecha = ft.DatePicker(
             first_date=dt.datetime.now() - dt.timedelta(days=60),
@@ -129,6 +133,7 @@ class VistaCarga:
                 seccion("Venta"),
                 ft.Row([self.numero, ft.Column([ft.Text("Vence el reclamo", size=12), self.btn_vence], spacing=2),
                         self.deposito], wrap=True, spacing=16, vertical_alignment=ft.CrossAxisAlignment.START),
+                self.info_venta,
                 ft.Row([self.motivo, self.codigo], wrap=True, spacing=16,
                        vertical_alignment=ft.CrossAxisAlignment.START),
                 self.link,
@@ -158,6 +163,7 @@ class VistaCarga:
         self.condicion.value = d.get("condicion")
         self.motivo.value = d.get("motivo")
         self.deposito.value = d.get("deposito_origen")
+        self._buscar_en_informe(d.get("numero_venta", ""), actualizar=False)
         self.codigo.value = d.get("codigo_producto", "")
         self.link.value = d.get("link_publicacion", "")
         self.problema.value = d.get("problema_comprador", "")
@@ -181,8 +187,93 @@ class VistaCarga:
         self.numero.helper_text = aviso
         if error and self.numero.value:
             self.numero.error_text = error
+        if not error and len(numero) == 16 and numero != self._ultimo_buscado:
+            self._buscar_en_informe(numero)
         self._actualizar_pasos()
         return None if error else numero
+
+    # ------------------------------------------------------------ informe de ventas
+
+    def _mostrar_info(self, color, icono, texto: str) -> None:
+        self.info_venta.content = ft.Row([ft.Icon(icono, color=color, size=20),
+                                          ft.Text(texto, size=13, expand=True, selectable=True)],
+                                         vertical_alignment=ft.CrossAxisAlignment.START)
+        self.info_venta.bgcolor = ft.Colors.with_opacity(0.10, color)
+        self.info_venta.border = ft.border.all(1, ft.Colors.with_opacity(0.4, color))
+        self.info_venta.visible = True
+
+    @staticmethod
+    def _resumen(v: Venta) -> str:
+        fecha = v.fecha.strftime("%d/%m/%Y") if v.fecha else "—"
+        return f"{v.producto or 'Producto sin nombre'} · SKU {v.codigo or '—'} · vendida el {fecha} · {v.deposito}"
+
+    def _usar_venta(self, v: Venta, aviso: str | None = None) -> None:
+        self.venta_info = v
+        if self.numero.value != v.venta and not self.editando:
+            self.numero.value = v.venta
+            self.numero.helper_text = None
+        self._ultimo_buscado = v.venta
+        if not (self.codigo.value or "").strip() and v.codigo:
+            self.codigo.value = v.codigo
+        texto = self._resumen(v)
+        if aviso:
+            self._mostrar_info(ft.Colors.BLUE_700, ft.Icons.SWAP_HORIZ, f"{aviso}\n{texto}")
+        else:
+            self._mostrar_info(ft.Colors.GREEN_700, ft.Icons.CHECK_CIRCLE, texto)
+        self._verificar_duplicado()
+
+    def _buscar_en_informe(self, numero: str, actualizar: bool = True) -> None:
+        self._ultimo_buscado = numero
+        self.venta_info = None
+        if not numero:
+            return
+        try:
+            r = self.app.indice.buscar(numero)
+        except FirebaseError:
+            self.info_venta.visible = False
+            return
+        if r.tipo == "venta":
+            self._usar_venta(r.venta)
+        elif r.tipo == "carrito" and r.venta:
+            self._usar_venta(r.venta, f"Ese número es el ID Carrito. Se cambió por el Venta # {r.venta.venta}.")
+        elif r.tipo == "carrito":
+            self._elegir_venta_del_carrito(numero, r.opciones)
+        else:
+            self._mostrar_info(ft.Colors.AMBER_800, ft.Icons.WARNING_AMBER,
+                               "Este número no figura en el informe de ventas. Revise que esté bien copiado. "
+                               "Si es una venta muy nueva, puede guardar igual.")
+        if actualizar:
+            self._actualizar_pasos()
+
+    def _elegir_venta_del_carrito(self, carrito: str, opciones: list) -> None:
+        self._mostrar_info(ft.Colors.BLUE_700, ft.Icons.SHOPPING_CART,
+                           "Ese número es un carrito con varios productos. Elija cuál es el devuelto.")
+        grupo = ft.RadioGroup(content=ft.Column([
+            ft.Radio(value=v, label=f"{prod or 'Producto sin nombre'}  —  SKU {cod or '—'}  —  Venta # {v}")
+            for v, cod, prod in opciones], spacing=6))
+        dlg = ft.AlertDialog(
+            modal=True, title=ft.Text("¿Qué producto se devolvió?"),
+            content=ft.Container(ft.Column([
+                ft.Text(f"El carrito {carrito} tiene {len(opciones)} ventas. Elija la del producto que llegó:"),
+                grupo], tight=True, spacing=12), width=640))
+
+        def elegir(_):
+            if not grupo.value:
+                return
+            self.page.close(dlg)
+            try:
+                v = self.app.indice.venta(grupo.value)
+            except FirebaseError:
+                v = None
+            if v:
+                self._usar_venta(v, f"Carrito {carrito}: se eligió el Venta # {v.venta}.")
+            else:
+                self.numero.value = grupo.value
+            self._actualizar_pasos()
+
+        dlg.actions = [ft.TextButton("Cancelar", on_click=lambda _: self.page.close(dlg)),
+                       ft.FilledButton("Usar esta venta", on_click=elegir)]
+        self.page.open(dlg)
 
     def _verificar_duplicado(self, _=None) -> None:
         if self.editando:
@@ -313,6 +404,11 @@ class VistaCarga:
         if self.editando and self.existente.get("estado") not in settings.ESTADOS_EDITABLES_CARGA:
             estado = self.existente.get("estado")  # el admin ya avanzó el estado
         extra = {"deposito_origen": self.deposito.value} if self.app.es_admin and self.deposito.value else {}
+        v = self.venta_info
+        if v and v.venta == numero:
+            extra |= {"producto": v.producto, "fecha_venta": v.fecha.isoformat() if v.fecha else "",
+                      "sucursal": v.sucursal, "pedido": v.pedido, "carrito": v.carrito,
+                      "precio_unitario": v.precio}
         return extra | {
             "numero_venta": numero,
             "fecha_vencimiento": self.vence,
@@ -413,6 +509,8 @@ class VistaCarga:
             c.error_text = None
         self.numero.helper_text = None
         self.numero.read_only = False
+        self.venta_info, self._ultimo_buscado = None, ""
+        self.info_venta.visible = False
         self.clasif.value = None
         self.condicion.value = None
         self.motivo.value = None
