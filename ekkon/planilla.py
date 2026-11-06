@@ -43,7 +43,8 @@ ALIAS = {C_PEDIDO: ("N° Pedido", "Pedido", "Nro Pedido", "N° de Pedido", "Nro.
 COLUMNAS_INFORME = (C_FECHA_COMPRA, C_ARTICULO, C_SKU, C_DEP_ORIGEN, C_COSTO, C_PEDIDO)
 
 # Valores de la planilla que el programa puede reemplazar aunque la celda no esté vacía
-REEMPLAZABLES = {C_ESTADO1: {"pendiente"}, C_CLASIF: {"service interno"}, C_CONDICION: {"service interno"}}
+REEMPLAZABLES = {C_ESTADO1: {"pendiente"}, C_CLASIF: {"service interno"}, C_CONDICION: {"service interno"},
+                 C_TRANSF: {"a la espera de remito"}}
 
 # Columnas donde el valor del programa es solo el inicial: si después cambia en la planilla
 # (Email enviado, Realizada) no es una diferencia para reportar
@@ -186,7 +187,12 @@ def valores_de(dev: dict, hoy: dt.date | None = None) -> dict:
         v[C_DEP_FINAL] = final
     if dev.get("costo_envio") is not None:
         v[C_COSTO_ENVIO] = dev["costo_envio"]
-    if dev.get("nc_realizada"):
+    if dev.get("tipo") == "cancelacion":
+        # En las cancelaciones NdC dice si lleva nota de crédito; la transferencia es por remito interno
+        v[C_NDC] = "Si" if dev.get("lleva_nc") else "No"
+        if dev.get("transferencia"):
+            v[C_TRANSF] = dev["transferencia"]
+    elif dev.get("nc_realizada"):
         v[C_NDC] = "Si"
         if dev.get("transferencia"):
             v[C_TRANSF] = dev["transferencia"]

@@ -24,6 +24,8 @@ class VistaAjustes:
         para_transf = ft.TextField(label="Destinatarios del email de transferencia",
                                    value=c.get("email_transferencia_para", ""),
                                    helper_text="Separados por coma. Ej.: logistica@…, service@…")
+        para_cancel = ft.TextField(label="Destinatario del email de cancelaciones (Carolina)",
+                                   value=c.get("email_cancelaciones_para", ""))
         ultima = ft.TextField(label="Última versión publicada", value=c.get("ultima_version", ""), width=260,
                               hint_text=VERSION)
         minima = ft.TextField(label="Versión mínima permitida", value=c.get("version_minima", ""), width=260,
@@ -118,6 +120,7 @@ class VistaAjustes:
                 return
             campos = {"claude_project_url": claude.value.strip(), "planilla_url": link,
                       "email_transferencia_para": para_transf.value.strip(),
+                      "email_cancelaciones_para": para_cancel.value.strip(),
                       "ultima_version": ultima.value.strip(), "version_minima": minima.value.strip(),
                       "url_descarga": descarga.value.strip()}
             try:
@@ -155,7 +158,7 @@ class VistaAjustes:
                                                  allowed_extensions=["csv"]))]),
                 progreso_informe, estado_informe,
             ], spacing=12)),
-            tarjeta(ft.Column([seccion("Emails"), para_transf], spacing=14)),
+            tarjeta(ft.Column([seccion("Emails"), para_transf, para_cancel], spacing=14)),
             tarjeta(ft.Column([seccion("Actualizaciones"), ft.Row([ultima, minima], spacing=16), descarga],
                               spacing=14)),
             ft.Row([ft.FilledButton("Guardar", icon=ft.Icons.SAVE, on_click=guardar, height=46)]),

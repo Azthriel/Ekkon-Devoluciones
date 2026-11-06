@@ -85,7 +85,19 @@ ESTADOS = {
     "pendiente": "Pendiente de ML",
     "cobertura": "Con cobertura",
     "sin_cobertura": "Sin cobertura",
+    "cancelacion": "Cancelación",
 }
+
+# Cancelaciones: vuelven como N a Podestá. Con o sin NC, se validan con el remito interno.
+TRANSF_ESPERA_REMITO = "A la espera de remito"
+EMAIL_CANCELACIONES_ASUNTO = "Devoluciones Procourrier"
+EMAIL_CANCELACIONES_INTRO = ("Buenas Caro, te comparto los siguientes pedidos que volvieron como "
+                             "cancelaciones de Procourrier:")
+
+
+def necesita_nc(d: dict) -> bool:
+    """Las devoluciones siempre llevan NC; las cancelaciones solo si se marcó que la llevan."""
+    return d.get("tipo") != "cancelacion" or bool(d.get("lleva_nc"))
 
 # Estados que el perfil de carga todavía puede modificar
 ESTADOS_EDITABLES_CARGA = ("cargada", "reclamo_armado", "sin_reclamo")

@@ -353,6 +353,7 @@ class App:
         from .usuarios import VistaUsuarios
         from .ajustes import VistaAjustes
         from .emails import VistaEmails
+        from .cancelaciones import VistaCancelaciones
 
         secciones = [
             ("Cargar", ft.Icons.ADD_A_PHOTO_OUTLINED, ft.Icons.ADD_A_PHOTO, lambda: VistaCarga(self).control()),
@@ -364,6 +365,8 @@ class App:
                 ("Pendientes", ft.Icons.HOURGLASS_EMPTY, ft.Icons.HOURGLASS_FULL,
                  lambda: VistaLista(self, modo="pendientes").control()),
                 ("Transferencias", ft.Icons.MOVE_UP_OUTLINED, ft.Icons.MOVE_UP, lambda: VistaEmails(self).control()),
+                ("Cancelaciones", ft.Icons.REMOVE_SHOPPING_CART_OUTLINED, ft.Icons.REMOVE_SHOPPING_CART,
+                 lambda: VistaCancelaciones(self).control()),
                 ("Usuarios", ft.Icons.PEOPLE_OUTLINE, ft.Icons.PEOPLE, lambda: VistaUsuarios(self).control()),
                 ("Ajustes", ft.Icons.SETTINGS_OUTLINED, ft.Icons.SETTINGS, lambda: VistaAjustes(self).control()),
             ]

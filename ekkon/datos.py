@@ -60,6 +60,30 @@ def descripcion_clasificacion(codigo: str) -> str:
     return dict(settings.CLASIFICACIONES).get(codigo, codigo or "—")
 
 
+# ---------------------------------------------------------------- cancelaciones
+
+def lista_remito(cancelaciones: list[dict], modelos: dict | None = None) -> str:
+    """Lista para el remito interno, mismo formato que el email de transferencia (agrupada por SKU)."""
+    from .planilla import modelo
+    modelos = modelos or {}
+    grupos: dict[tuple, int] = {}
+    for d in cancelaciones:
+        sku = d.get("codigo_producto") or "(sin SKU)"
+        prod = modelos.get(sku) or modelo(d.get("producto") or "") or "(sin producto)"
+        grupos[(sku, prod)] = grupos.get((sku, prod), 0) + 1
+    return "\n".join(["SKU | Producto | Cant."] + [f"{s} | {p} | {c}" for (s, p), c in grupos.items()])
+
+
+def email_cancelaciones(cancelaciones: list[dict]) -> tuple[str, str]:
+    pedidos = []
+    for d in cancelaciones:
+        p = (d.get("pedido") or "").strip() or f"(sin pedido — venta {d.get('numero_venta')})"
+        if p not in pedidos:
+            pedidos.append(p)
+    return settings.EMAIL_CANCELACIONES_ASUNTO, "\n".join([settings.EMAIL_CANCELACIONES_INTRO, *pedidos, "",
+                                                             "Saludos."])
+
+
 # ---------------------------------------------------------------- reclamo con Claude
 
 def armar_prompt(d: dict, cantidad_fotos: int) -> str:
@@ -216,6 +240,27 @@ class Devoluciones:
                 self.actualizar(d["_id"], {campo: "Service"})
                 cambiadas.add(d["_id"])
         return len(cambiadas)
+
+    def crear_cancelacion(self, numero: str, lleva_nc: bool, info, usuario: dict, pedido: str = "",
+                          notas: str = "") -> dict:
+        """Cancelación: vuelve como N, buena, sin reclamo, a Podestá, a la espera del remito interno."""
+        datos = {
+            "numero_venta": numero, "tipo": "cancelacion", "estado": "cancelacion",
+            "fecha_vencimiento": dt.date.today().isoformat(),
+            "clasificacion": "N", "condicion": "buena", "motivo": "cancelado", "reclamo": False,
+            "descripcion": "Cancelación", "lleva_nc": bool(lleva_nc), "nc_realizada": False,
+            "deposito_final": "Podestá", "transferencia": settings.TRANSF_ESPERA_REMITO,
+            "remito_hecho": False, "informado_caro": False, "pedido": pedido or "", "notas": notas or "",
+        }
+        if info is not None:
+            datos.update({"producto": info.producto, "codigo_producto": info.codigo, "carrito": info.carrito,
+                          "fecha_venta": info.fecha.isoformat() if info.fecha else "", "sucursal": info.sucursal,
+                          "precio_unitario": info.precio, "deposito_origen": info.deposito})
+            datos["pedido"] = pedido or info.pedido
+        return self.crear(datos, [], usuario)
+
+    def cancelaciones(self, limite: int = 1000) -> list[dict]:
+        return [d for d in self.recientes(limite) if d.get("tipo") == "cancelacion"]
 
     def mover(self, viejo: str, nuevo: str, extra: dict | None = None) -> bool:
         """Pasa una devolución cargada con el ID Carrito al documento del Venta # (con sus fotos)."""

@@ -118,7 +118,7 @@ class VistaLista:
         for d in self.filas:
             estado = d.get("estado")
             if self.modo == "pendientes":
-                sin_nc = not d.get("nc_realizada")
+                sin_nc = settings.necesita_nc(d) and not d.get("nc_realizada")
                 esperando = estado in ESTADOS_PENDIENTES
                 que = self.filtro_pend.value or "todos"
                 if (que == "sin_nc" and not sin_nc) or (que == "cobertura" and not esperando) \
@@ -159,6 +159,8 @@ class VistaLista:
                     ft.DataCell(chip_estado(d.get("estado", ""))),
                     ft.DataCell(ft.Icon(ft.Icons.RECEIPT_LONG, color=ft.Colors.GREEN_700, size=18,
                                         tooltip="NC realizada") if d.get("nc_realizada") else
+                                ft.Text("No lleva", size=12, color=ft.Colors.OUTLINE)
+                                if not settings.necesita_nc(d) else
                                 ft.Text("Pendiente", size=12, color=ft.Colors.AMBER_800)),
                     ft.DataCell(ft.Text((d.get("cargado_por") or "").split("@")[0])),
                     ft.DataCell(ft.Text(fecha_corta(d.get("cargado_en")))),
@@ -175,6 +177,8 @@ class VistaLista:
     # ------------------------------------------------------------ detalle
 
     def _puede_editar(self, d: dict) -> bool:
+        if d.get("tipo") == "cancelacion":
+            return False   # se corrigen borrando y volviendo a cargar desde Cancelaciones
         return self.app.es_admin or d.get("estado") in settings.ESTADOS_EDITABLES_CARGA
 
     def _guia(self, d: dict, url_venta: str, mensaje: str, abrir_carpeta, cerrar) -> ft.Control | None:
@@ -256,13 +260,20 @@ class VistaLista:
             ft.Row([dato("Condición", d.get("condicion")), dato("Motivo", d.get("motivo")),
                     self._deposito(d) if self.app.es_admin else dato("Depósito de origen", d.get("deposito_origen")),
                     dato("N° de mediación", d.get("numero_mediacion")),
-                    dato("Nota de crédito", "Realizada" if d.get("nc_realizada") else "Pendiente"),
+                    dato("Nota de crédito", "Realizada" if d.get("nc_realizada") else
+                         ("No lleva" if not settings.necesita_nc(d) else "Pendiente")),
                     dato("Costo de envío", f"$ {d['costo_envio']:,.2f}".replace(",", "X").replace(".", ",")
                          .replace("X", ".") if d.get("costo_envio") is not None else None)],
                    spacing=30, wrap=True),
             ft.Row([dato("Producto", d.get("producto")), dato("Pedido", d.get("pedido")),
                     dato("Fecha de venta", fecha_corta(d.get("fecha_venta")) if d.get("fecha_venta") else None),
                     dato("ID Carrito", d.get("carrito"))], spacing=30, wrap=True),
+            *([ft.Row([dato("Tipo", "Cancelación"), dato("Lleva NC", "Sí" if d.get("lleva_nc") else "No"),
+                       dato("Remito interno", ("Hecho " + (d.get("remito_numero") or "")).strip()
+                            if d.get("remito_hecho") else "Pendiente"),
+                       dato("Informado a Carolina", "Sí" if d.get("informado_caro") else "No"),
+                       dato("Notas", d.get("notas"))], spacing=30, wrap=True)]
+              if d.get("tipo") == "cancelacion" else []),
             dato("Problema informado por el comprador", d.get("problema_comprador")),
             dato("Estado en que llegó", d.get("descripcion")),
         ]
@@ -322,7 +333,7 @@ class VistaLista:
         if self.app.es_admin:
             # Acciones del día a día arriba del detalle, a mano y sin tener que bajar
             botones: list[ft.Control] = []
-            if not d.get("nc_realizada"):
+            if settings.necesita_nc(d) and not d.get("nc_realizada"):
                 botones.append(ft.FilledTonalButton("Marcar NC realizada", icon=ft.Icons.RECEIPT_LONG,
                                                     on_click=lambda _: (cerrar(), self._marcar_nc(d))))
             if d.get("estado") in ("reclamado", "pendiente", "reclamo_armado"):
@@ -419,6 +430,10 @@ class VistaLista:
             return
         transferencia = settings.transferencia_al_hacer_nc(clasif)
         final = settings.DEPOSITO_FINAL.get(clasif, "Service Podesta")
+        if d.get("tipo") == "cancelacion":
+            # La NC de una cancelación manda el stock a Podestá: se valida con el remito interno
+            final = "Podestá"
+            transferencia = settings.TRANSF_REALIZADA if d.get("remito_hecho") else settings.TRANSF_ESPERA_REMITO
         try:
             self.app.devs.actualizar(d["numero_venta"], {"nc_realizada": True, "transferencia": transferencia,
                                                          "deposito_final": final})

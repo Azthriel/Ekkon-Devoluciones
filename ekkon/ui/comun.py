@@ -17,6 +17,7 @@ COLOR_ESTADO = {
     "pendiente": ft.Colors.ORANGE_800,
     "cobertura": ft.Colors.GREEN_700,
     "sin_cobertura": ft.Colors.RED_700,
+    "cancelacion": ft.Colors.PURPLE_700,
 }
 
 

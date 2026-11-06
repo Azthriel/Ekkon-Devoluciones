@@ -20,6 +20,9 @@ Programa de Windows para cargar y gestionar las devoluciones de Mercado Libre.
   en Venta #, muestra el producto y completa el SKU; y la sincronización completa fecha de compra, artículo, SKU,
   depósito de origen (Sucursal) y costo, y detecta filas con el ID Carrito en "N° Venta".
 - **Detalle de la venta**: link automático al detalle de la venta en ML (usa el ID Carrito si la venta es parte de un carrito) y botón *Costo de envío* que se escribe en la planilla.
+- **Cancelaciones (0.5)**: se cargan por Venta # o ID Carrito (datos del informe), con "lleva NC" sí/no. Vuelven como N, buena,
+  sin reclamo, a Podestá, con Transferencia "A la espera de remito" hasta marcar el remito interno hecho ("Realizada").
+  Arma la lista SKU | Producto | Cant. para el remito de Canva y el email con los pedidos para Carolina.
 - **Emails**: arma la solicitud de transferencia con las filas que tienen Transferencia = "A la espera de
   movimiento". Origen siempre Service Podestá (ahí entra la unidad al hacer la NC); destino según "Deposito final".
   Incluye *Abrir en Gmail* y *Marcar como enviado*.
