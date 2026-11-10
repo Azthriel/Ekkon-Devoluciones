@@ -110,11 +110,9 @@ class App:
     @staticmethod
     def _es_prueba() -> bool:
         """Solo en el .apk que se compila para la prueba automática en el emulador (nunca en el que se instala)."""
-        try:
-            from .. import _prueba  # noqa: F401  (el archivo lo crea la prueba antes de compilar)
-            return True
-        except ImportError:
-            return False
+        import importlib.util
+        # El archivo ekkon/_prueba.py lo crea la prueba automática antes de compilar
+        return importlib.util.find_spec("ekkon._prueba") is not None
 
     def _pantalla_prueba_camara(self) -> None:
         resultado = ft.Text("CAMARA SIN PROBAR", size=22)
