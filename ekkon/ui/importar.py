@@ -45,7 +45,7 @@ def importar_devoluciones(app, al_terminar=None) -> None:
                                                  for e, n in por_estado.most_common()), size=12))
         sin_nc = sum(1 for d in imp.nuevas if settings.necesita_nc(d) and not d.get("nc_realizada"))
         if sin_nc:
-            lineas.append(ft.Text(f"  {sin_nc} no tienen \"Si\" en NdC: van a aparecer en Pendientes como sin NC.",
+            lineas.append(ft.Text(f"  {sin_nc} tienen NdC vacía: van a aparecer en Pendientes como sin NC.",
                                   size=12, color=ft.Colors.AMBER_800))
         lineas.append(ft.Text("Quedan sin fotos ni mensaje de reclamo. La planilla no se modifica: para estas "
                               "filas, lo que diga la planilla manda.", size=12, color=ft.Colors.ON_SURFACE_VARIANT))

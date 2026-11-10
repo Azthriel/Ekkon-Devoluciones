@@ -567,8 +567,12 @@ def importar_de_hoja(hoja: Hoja, existentes: set[str], ventas: dict | None = Non
                 d[campo] = t(col)
         if reclamo in ("si", "no"):
             d["reclamo"] = reclamo == "si"
-        if normalizar(hoja.valor(fila0, C_NDC)) == "si":
+        # NdC: "Si" = hecha; vacía = falta hacerla; cualquier otra cosa ("No") = no la requería
+        ndc = normalizar(hoja.valor(fila0, C_NDC))
+        if ndc == "si":
             d["nc_realizada"] = True
+        elif ndc:
+            d["lleva_nc"] = False
         for campo, col in (("monto_reintegrado", C_MONTO), ("costo_envio", C_COSTO_ENVIO),
                            ("precio_unitario", C_COSTO)):
             n = numero_celda(hoja.valor(fila0, col))

@@ -378,3 +378,16 @@ def test_columna_pedido_se_completa_con_el_informe():
     ventas = {"2000000000000001": Venta("2000000000000001", "", "00012345", None, "RLA-0045", "ASPIRADORA",
                                         "Podestá", 1, None)}
     assert dict(P.planificar(h, [], ventas, hoy=HOY).celdas)["Y2"] == "'00012345"
+
+
+def test_importar_ndc_no_es_que_no_la_requeria():
+    from ekkon import settings
+    h = P.Hoja([ENCABEZADOS,
+                fila(**{"Fecha revisión": P.serial(HOY), "N° Venta": "2000000000000001", "NdC": "No"}),
+                fila(**{"Fecha revisión": P.serial(HOY), "N° Venta": "2000000000000002"}),
+                fila(**{"Fecha revisión": P.serial(HOY), "N° Venta": "2000000000000003", "NdC": "Si"})])
+    no, vacia, si = P.importar_de_hoja(h, set(), hoy=HOY).nuevas
+    assert not settings.necesita_nc(no)
+    assert settings.necesita_nc(vacia) and not vacia.get("nc_realizada")
+    assert settings.necesita_nc(si) and si["nc_realizada"]
+    assert P.planificar(h, [no, vacia, si], hoy=HOY).celdas == []

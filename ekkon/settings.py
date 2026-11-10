@@ -96,8 +96,10 @@ EMAIL_CANCELACIONES_INTRO = ("Buenas Caro, te comparto los siguientes pedidos qu
 
 
 def necesita_nc(d: dict) -> bool:
-    """Las devoluciones siempre llevan NC; las cancelaciones solo si se marcó que la llevan."""
-    return d.get("tipo") != "cancelacion" or bool(d.get("lleva_nc"))
+    """Las devoluciones llevan NC, salvo que se indique que no (cancelaciones sin NC, o "No" en NdC en la planilla)."""
+    if "lleva_nc" in d:
+        return bool(d["lleva_nc"])
+    return d.get("tipo") != "cancelacion"
 
 # Estados que el perfil de carga todavía puede modificar
 ESTADOS_EDITABLES_CARGA = ("cargada", "reclamo_armado", "sin_reclamo")
