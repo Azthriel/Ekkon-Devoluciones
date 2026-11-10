@@ -80,6 +80,9 @@ class VistaCarga:
                                         on_change=lambda _: self._actualizar_pasos())
         self.reclamo = ft.Switch(label="Corresponde reclamo a Mercado Libre", value=True,
                                  on_change=self._reclamo_cambio)
+        # Devoluciones que revisó Full: Mercado Libre no deja reclamar
+        self.full = ft.Checkbox(label="Revisada por Full (no se puede reclamar)", value=False,
+                                on_change=self._full_cambio)
 
         self.galeria = ft.Row(wrap=True, spacing=10, run_spacing=10)
         self.btn_fotos = ft.OutlinedButton("Agregar fotos", icon=ft.Icons.ADD_PHOTO_ALTERNATE,
@@ -155,7 +158,7 @@ class VistaCarga:
                 ft.Row([self.btn_fotos, self.txt_fotos], spacing=12, wrap=True),
                 self.galeria,
             ], spacing=14)),
-            tarjeta(ft.Column([self.reclamo, self.panel_reclamo], spacing=14)),
+            tarjeta(ft.Column([self.full, self.reclamo, self.panel_reclamo], spacing=14)),
             self.progreso,
             ft.Row([self.btn_guardar, self.btn_limpiar] if not self.editando else
                    [self.btn_guardar, ft.TextButton("Cancelar", on_click=lambda _: self._terminar())]),
@@ -177,6 +180,8 @@ class VistaCarga:
         self.problema.value = d.get("problema_comprador", "")
         self.descripcion.value = d.get("descripcion", "")
         self.reclamo.value = bool(d.get("reclamo", True))
+        self.full.value = bool(d.get("full"))
+        self.reclamo.disabled = self.full.value
         self.mensaje.value = d.get("mensaje_reclamo", "")
         pct = d.get("porcentaje_sugerido")
         self.porcentaje.value = str(pct) if pct is not None else ""
@@ -327,9 +332,18 @@ class VistaCarga:
         sugeridas = set(settings.CONDICION_SUGERIDA.values())
         if sugerida and (not self.condicion.value or self.condicion.value in sugeridas):
             self.condicion.value = sugerida
-        if not self.editando:
+        if not self.editando and not self.full.value:
             self.reclamo.value = self.clasif.value != "N"
             self.panel_reclamo.visible = self.reclamo.value
+        self._actualizar_pasos()
+
+    def _full_cambio(self, _) -> None:
+        if self.full.value:
+            self.reclamo.value = False
+        elif self.clasif.value != "N":
+            self.reclamo.value = True
+        self.reclamo.disabled = bool(self.full.value)
+        self.panel_reclamo.visible = bool(self.reclamo.value)
         self._actualizar_pasos()
 
     def _reclamo_cambio(self, _) -> None:
@@ -411,7 +425,8 @@ class VistaCarga:
             self.app.avisar("El porcentaje no puede superar 100.", error=True)
             return None
         mensaje = (self.mensaje.value or "").strip()
-        reclamo = bool(self.reclamo.value)
+        full = bool(self.full.value)
+        reclamo = bool(self.reclamo.value) and not full
         if not reclamo:
             estado = "sin_reclamo"
         elif mensaje:
@@ -439,6 +454,7 @@ class VistaCarga:
             "problema_comprador": (self.problema.value or "").strip(),
             "descripcion": (self.descripcion.value or "").strip(),
             "reclamo": reclamo,
+            "full": full,
             "mensaje_reclamo": mensaje if reclamo else "",
             "porcentaje_sugerido": pct if reclamo else None,
             "estado": estado,
@@ -549,6 +565,8 @@ class VistaCarga:
         self.motivo.value = None
         self.deposito.value = "Podesta"
         self.reclamo.value = True
+        self.reclamo.disabled = False
+        self.full.value = False
         self.panel_reclamo.visible = True
         self.vence = dt.date.today().isoformat()
         self._actualizar_fecha()

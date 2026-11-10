@@ -391,3 +391,14 @@ def test_importar_ndc_no_es_que_no_la_requeria():
     assert settings.necesita_nc(vacia) and not vacia.get("nc_realizada")
     assert settings.necesita_nc(si) and si["nc_realizada"]
     assert P.planificar(h, [no, vacia, si], hoy=HOY).celdas == []
+
+
+def test_full_se_escribe_y_se_importa():
+    d = dev("2000014434008281", clasificacion="B", condicion="Con uso", reclamo=False, full=True,
+            estado="sin_reclamo")
+    assert P.valores_de(d, HOY)[P.C_RECLAMO] == "Full"
+    h = P.Hoja([ENCABEZADOS, fila(**{"Fecha revisión": P.serial(HOY), "N° Venta": "2000000000000009",
+                                     "Reclamo": "Full", "NdC": "Si"})])
+    i = P.importar_de_hoja(h, set(), hoy=HOY).nuevas[0]
+    assert i["full"] and i["reclamo"] is False and i["estado"] == "sin_reclamo"
+    assert P.planificar(h, [i], hoy=HOY).celdas == []

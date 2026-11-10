@@ -202,7 +202,8 @@ class VistaLista:
                     ft.DataCell(ft.Text(d.get("numero_venta", ""), weight=ft.FontWeight.W_600, selectable=True)),
                     ft.DataCell(ft.Text(fecha_corta(vence), color=color_vence)),
                     ft.DataCell(ft.Text(d.get("clasificacion", ""))),
-                    ft.DataCell(ft.Icon(ft.Icons.CHECK_CIRCLE if d.get("reclamo") else ft.Icons.REMOVE_CIRCLE_OUTLINE,
+                    ft.DataCell(ft.Text("Full", size=12, weight=ft.FontWeight.W_600) if d.get("full") else
+                                ft.Icon(ft.Icons.CHECK_CIRCLE if d.get("reclamo") else ft.Icons.REMOVE_CIRCLE_OUTLINE,
                                         color=ft.Colors.GREEN_700 if d.get("reclamo") else ft.Colors.OUTLINE,
                                         size=18)),
                     ft.DataCell(ft.Text(f"{pct}%" if pct is not None else "—")),
@@ -257,7 +258,9 @@ class VistaLista:
         """Tarjeta "Qué hacer en Mercado Libre" con los pasos y los botones para hacerlo."""
         estado = d.get("estado")
         pendiente_reclamo = d.get("reclamo") and estado in ("cargada", "reclamo_armado")
-        pendiente_revision = not d.get("reclamo") and estado == "sin_reclamo" and not d.get("ml_revisada")
+        # Las de Full y las importadas de la planilla no tienen nada para hacer en ML
+        pendiente_revision = (not d.get("reclamo") and estado == "sin_reclamo" and not d.get("ml_revisada")
+                              and not d.get("full") and not d.get("importada"))
         if not (pendiente_reclamo or pendiente_revision):
             return None
         g = guia_mercadolibre(d)
@@ -329,6 +332,8 @@ class VistaLista:
                     ft.Text(f"Cargó {d.get('cargado_por', '')} el {fecha_corta(d.get('cargado_en'))}",
                             size=12, color=ft.Colors.ON_SURFACE_VARIANT)], spacing=12, wrap=True),
             ft.Row([dato("Vence", fecha_corta(d.get("fecha_vencimiento"))),
+                    dato("Reclamo", "Full (revisada por Full)" if d.get("full") else
+                         "Sí" if d.get("reclamo") else "No"),
                     dato("Clasificación", descripcion_clasificacion(d.get("clasificacion", ""))),
                     dato("Código", d.get("codigo_producto")),
                     dato("% sugerido", f"{d['porcentaje_sugerido']}%" if d.get("porcentaje_sugerido") is not None

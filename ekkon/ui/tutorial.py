@@ -33,7 +33,8 @@ PASOS_CARGA = [
       "Scrap es descarte.",
       "Condición: el programa la sugiere al elegir la clasificación, pero no siempre acierta. "
       "Revísela: buena, caja rota, con uso, service, irreparable, etc.",
-      "Si elige N, el reclamo se desactiva solo. Si corresponde reclamar igual, vuelva a activarlo."]),
+      "Si elige N, el reclamo se desactiva solo. Si corresponde reclamar igual, vuelva a activarlo.",
+      "Si la devolución la revisó Full, marque \"Revisada por Full\": no se puede reclamar."]),
     (ft.Icons.PHOTO_CAMERA, "5. Estado y fotos",
      ["Escriba solo lo que se ve: golpes, rayones, faltantes, suciedad, señales de uso.",
       "No invente fallas. Mercado Libre pide describir con precisión.",

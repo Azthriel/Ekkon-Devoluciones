@@ -220,7 +220,9 @@ def valores_de(dev: dict, hoy: dt.date | None = None) -> dict:
         v[C_NDC] = "Si"
         if dev.get("transferencia"):
             v[C_TRANSF] = dev["transferencia"]
-    if "reclamo" in dev:
+    if dev.get("full"):
+        v[C_RECLAMO] = "Full"   # la revisó Full: no se puede reclamar
+    elif "reclamo" in dev:
         v[C_RECLAMO] = "si" if dev.get("reclamo") else "no"
     if dev.get("numero_mediacion"):
         v[C_MEDIACION] = dev["numero_mediacion"]
@@ -567,6 +569,8 @@ def importar_de_hoja(hoja: Hoja, existentes: set[str], ventas: dict | None = Non
                 d[campo] = t(col)
         if reclamo in ("si", "no"):
             d["reclamo"] = reclamo == "si"
+        elif reclamo == "full":
+            d["reclamo"], d["full"] = False, True
         # NdC: "Si" = hecha; vacía = falta hacerla; cualquier otra cosa ("No") = no la requería
         ndc = normalizar(hoja.valor(fila0, C_NDC))
         if ndc == "si":
