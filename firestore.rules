@@ -41,6 +41,18 @@ service cloud.firestore {
       allow write: if admin();
     }
 
+    // Índice del informe de órdenes de servicio
+    match /os_idx/{doc} {
+      allow read: if activo();
+      allow write: if admin();
+    }
+
+    // Reparaciones: las cargan el administrador y el perfil Service
+    match /reparaciones/{rep} {
+      allow read: if activo();
+      allow write: if activo() && (perfil().rol == 'admin' || perfil().rol == 'service');
+    }
+
     match /devoluciones/{venta} {
       allow read: if activo();
       allow create: if activo()

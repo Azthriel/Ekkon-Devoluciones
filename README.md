@@ -23,6 +23,9 @@ Programa de Windows para cargar y gestionar las devoluciones de Mercado Libre.
 - **Cancelaciones (0.5)**: se cargan por Venta # o ID Carrito (datos del informe), con "lleva NC" sí/no. Vuelven como N, buena,
   sin reclamo, a Podestá, con Transferencia "A la espera de remito" hasta marcar el remito interno hecho ("Realizada").
   Arma la lista SKU | Producto | Cant. para el remito de Canva y el email con los pedidos para Carolina.
+- **Reparaciones (0.6)**: perfil *Service* (carga devoluciones y reparaciones). Se busca el producto por N° de OS (informe
+  "OS para APP" importado en *Ajustes*) o por Venta #. La app es la fuente de la planilla de Reparaciones; las reparaciones
+  terminadas de devoluciones agregan una nota y cambian la clasificación (Outlet B→B, Outlet C→C, Scrap/Repuesto→Scrap).
 - **Emails**: arma la solicitud de transferencia con las filas que tienen Transferencia = "A la espera de
   movimiento". Origen siempre Service Podestá (ahí entra la unidad al hacer la NC); destino según "Deposito final".
   Incluye *Abrir en Gmail* y *Marcar como enviado*.

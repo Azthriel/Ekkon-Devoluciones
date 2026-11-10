@@ -176,6 +176,28 @@ class VistaLista:
 
     # ------------------------------------------------------------ detalle
 
+    def _bloque_reparacion(self, d: dict, dato) -> list[ft.Control]:
+        """Si la venta tiene una reparación cargada por el service, se muestra su estado."""
+        try:
+            r = self.app.reparaciones.obtener(d.get("numero_venta", ""))
+        except Exception:  # noqa: BLE001
+            r = None
+        if not r:
+            return []
+        filas: list[ft.Control] = [
+            seccion("Reparación (service)"),
+            ft.Row([dato("Estado", ", ".join(r.get("estados") or []) or None),
+                    dato("¿Reparado?", r.get("reparado")), dato("Estado final", r.get("estado_final")),
+                    dato("Fecha de reparación", fecha_corta(r.get("fecha_reparacion")) if r.get("fecha_reparacion")
+                         else None)], spacing=30, wrap=True),
+            dato("Qué se hizo", r.get("que_se_hizo")),
+        ]
+        if d.get("clasificacion_original"):
+            filas.append(ft.Text(f"La clasificación pasó de {d['clasificacion_original']} a {d.get('clasificacion')} "
+                                 "por la reparación.", size=12, color=ft.Colors.ON_SURFACE_VARIANT))
+        return [ft.Container(ft.Column(filas, spacing=8), padding=14, border_radius=12,
+                             border=ft.border.all(1, ft.Colors.OUTLINE_VARIANT))]
+
     def _puede_editar(self, d: dict) -> bool:
         if d.get("tipo") == "cancelacion":
             return False   # se corrigen borrando y volviendo a cargar desde Cancelaciones
@@ -274,6 +296,7 @@ class VistaLista:
                        dato("Informado a Carolina", "Sí" if d.get("informado_caro") else "No"),
                        dato("Notas", d.get("notas"))], spacing=30, wrap=True)]
               if d.get("tipo") == "cancelacion" else []),
+            *self._bloque_reparacion(d, dato),
             dato("Problema informado por el comprador", d.get("problema_comprador")),
             dato("Estado en que llegó", d.get("descripcion")),
         ]

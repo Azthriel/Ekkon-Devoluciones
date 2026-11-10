@@ -34,6 +34,7 @@ C_MONTO = "Monto Reintegrado"
 C_MOVIMIENTO = "N° Movimiento"
 C_REPORTADO = "¿Se reporto movimiento?"
 C_COSTO = "Costo del producto"
+C_NOTAS = "Notas"
 C_COSTO_ENVIO = "Costo de envio"
 # Columna opcional: si la planilla tiene una columna con alguno de estos nombres, se completa el pedido
 C_PEDIDO = "N° Pedido"
@@ -120,13 +121,19 @@ def letra_columna(indice0: int) -> str:
 # ---------------------------------------------------------------- estructura
 
 class Hoja:
-    def __init__(self, filas: list[list]):
+    """Una hoja leída de Sheets. Por defecto la de devoluciones; la de reparaciones usa otra columna clave."""
+
+    def __init__(self, filas: list[list], clave: str = None, requeridas: tuple | None = None,
+                 leer_clave=None, coincide=None):
         if not filas:
             raise ValueError("La hoja está vacía.")
         self.encabezados = [str(x or "").strip() for x in filas[0]]
         self.filas = filas[1:]
         self.col = {normalizar(h): i for i, h in enumerate(self.encabezados) if h}
-        faltan = [c for c in (C_VENTA, C_FECHA_REV) if normalizar(c) not in self.col]
+        self.clave = clave or C_VENTA
+        self._leer_clave = leer_clave or venta_de_celda
+        self._coincide = coincide or coincide_venta
+        faltan = [c for c in (requeridas or (C_VENTA, C_FECHA_REV)) if normalizar(c) not in self.col]
         if faltan:
             raise ValueError("No encuentro las columnas: " + ", ".join(faltan) +
                              ". Revise que la primera fila tenga los encabezados.")
@@ -149,16 +156,19 @@ class Hoja:
         """Número de fila en la planilla (1 = encabezados)."""
         return fila0 + 2
 
+    def clave_de(self, fila0: int) -> str:
+        return self._leer_clave(self.valor(fila0, self.clave))
+
     def ultima_con_venta(self) -> int:
-        """Índice 0-based de la última fila con número de venta (-1 si no hay)."""
+        """Índice 0-based de la última fila con clave (número de venta u OS); -1 si no hay."""
         for i in range(len(self.filas) - 1, -1, -1):
-            if venta_de_celda(self.valor(i, C_VENTA)):
+            if self.clave_de(i):
                 return i
         return -1
 
     def buscar(self, venta: str) -> int | None:
         for i in range(len(self.filas)):
-            if coincide_venta(venta_de_celda(self.valor(i, C_VENTA)), venta):
+            if self._coincide(self.clave_de(i), venta):
                 return i
         return None
 
@@ -185,6 +195,8 @@ def valores_de(dev: dict, hoy: dt.date | None = None) -> dict:
     final = dev.get("deposito_final") or settings.DEPOSITO_FINAL.get(dev.get("clasificacion", ""))
     if final:
         v[C_DEP_FINAL] = final
+    if dev.get("nota_reparacion"):
+        v[C_NOTAS] = dev["nota_reparacion"]
     if dev.get("costo_envio") is not None:
         v[C_COSTO_ENVIO] = dev["costo_envio"]
     if dev.get("tipo") == "cancelacion":
@@ -297,6 +309,12 @@ def _completar_fila(plan: Plan, hoja: Hoja, fila0: int, valores: dict, venta: st
         actual = hoja.valor(fila0, col)
         if col == C_VENTA or iguales(actual, val):
             continue
+        if col == C_NOTAS and not vacia(actual):
+            # Las notas se agregan al final, sin borrar lo que había
+            if normalizar(val) not in normalizar(actual):
+                plan.celdas.append((f"{letra_columna(i)}{numero}", f"{actual} | {val}"))
+                plan.actualizadas.add(venta)
+            continue
         se_pisa = any(iguales(actual, x) for x in (pisar or {}).get(col, ()))
         if vacia(actual) or normalizar(actual) in REEMPLAZABLES.get(col, ()) or se_pisa:
             plan.celdas.append((f"{letra_columna(i)}{numero}", para_escribir(col, val)))
@@ -351,6 +369,9 @@ def planificar(hoja: Hoja, devoluciones: list[dict], ventas: dict | None = None,
         cargado = dev.get("cargado_en")
         if not dev.get("planilla_en") and isinstance(cargado, dt.datetime):
             pisar[C_FECHA_REV] = {cargado.astimezone().date()}
+        if dev.get("clasificacion_original"):
+            # La reparación cambió la clasificación (ej. Service -> B): se reemplaza la anterior
+            pisar[C_CLASIF] = {dev["clasificacion_original"]}
         fila0 = hoja.buscar(venta)
         if fila0 is None and carrito:
             fila0 = hoja.buscar(carrito)

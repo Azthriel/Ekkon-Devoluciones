@@ -76,6 +76,18 @@ PASOS_ADMIN = [
 ]
 
 
+PASOS_SERVICE = [
+    (ft.Icons.BUILD, "Reparaciones",
+     ["En \"Reparaciones\" están las reparaciones del service. Toque una fila para actualizarla.",
+      "\"Nueva reparación\": escriba el N° de OS o el Venta # y toque \"Buscar producto\": el producto y el SKU "
+      "se completan solos.",
+      "Marque el estado actual (puede elegir varios), la causa y lo que hay que reparar.",
+      "Cuando termine: complete \"Qué se hizo\", \"¿Reparado?\", el repuesto y el \"Estado final\". "
+      "La fecha de reparación se pone sola.",
+      "Si era una devolución, la nota de la reparación queda en la planilla de devoluciones."]),
+]
+
+
 def _archivo(uid: str):
     return local.carpeta_datos() / f"tutorial_{uid}.json"
 
@@ -94,6 +106,8 @@ def marcar_visto(uid: str, visto: bool = True) -> None:
 def mostrar(app) -> None:
     page: ft.Page = app.page
     pasos = list(PASOS_CARGA)
+    if app.es_admin or app.es_service:
+        pasos += PASOS_SERVICE
     if app.es_admin:
         pasos += PASOS_ADMIN
     estado = {"i": 0}

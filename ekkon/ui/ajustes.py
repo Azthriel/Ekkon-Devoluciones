@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import flet as ft
 
-from .. import sheets, ventas
+from .. import os_idx, sheets, ventas
 from ..firebase import FirebaseError
 from ..version import VERSION
 from .comun import seccion, tarjeta, titulo
@@ -81,6 +81,43 @@ class VistaAjustes:
 
         selector_csv.on_result = csv_elegido
 
+        # Informe de órdenes de servicio (OS)
+        selector_os = ft.FilePicker()
+        self.page.overlay.append(selector_os)
+        estado_os = ft.Text(size=13)
+
+        def pintar_os():
+            try:
+                m = self.app.indice_os.meta()
+            except FirebaseError:
+                m = {}
+            if m.get("importado_en"):
+                estado_os.value = (f"Último informe de OS: {m['importado_en'].astimezone().strftime('%d/%m/%Y %H:%M')} "
+                                   f"— {m.get('os_total', 0)} órdenes en total.")
+                estado_os.color = None
+            else:
+                estado_os.value, estado_os.color = "Todavía no se importó el informe de OS.", ft.Colors.ERROR
+
+        def os_elegido(e: ft.FilePickerResultEvent):
+            if not e.files:
+                return
+            try:
+                with open(e.files[0].path, "rb") as fh:
+                    nuevas = os_idx.leer_csv(fh.read())
+                self.app.indice_os.importar(nuevas, self.app.usuario.get("email", ""))
+                self.app.avisar(f"Informe de OS importado ({len(nuevas)} órdenes).")
+            except (ValueError, OSError) as err:
+                self.app.avisar(str(err), error=True)
+            except FirebaseError as err:
+                self.app.manejar_error(err)
+            pintar_os()
+            self.page.update()
+
+        selector_os.on_result = os_elegido
+        planilla_rep = ft.TextField(label="Link de la planilla de Reparaciones (Google Sheets)",
+                                    value=c.get("planilla_reparaciones_url", ""),
+                                    hint_text="https://docs.google.com/spreadsheets/d/…")
+
         def pintar_clave():
             info = sheets.leer_clave()
             if info:
@@ -118,7 +155,11 @@ class VistaAjustes:
             if link and not sheets.id_de_link(link):
                 self.app.avisar("El link de la planilla no parece válido.", error=True)
                 return
+            if planilla_rep.value.strip() and not sheets.id_de_link(planilla_rep.value.strip()):
+                self.app.avisar("El link de la planilla de Reparaciones no parece válido.", error=True)
+                return
             campos = {"claude_project_url": claude.value.strip(), "planilla_url": link,
+                      "planilla_reparaciones_url": planilla_rep.value.strip(),
                       "email_transferencia_para": para_transf.value.strip(),
                       "email_cancelaciones_para": para_cancel.value.strip(),
                       "ultima_version": ultima.value.strip(), "version_minima": minima.value.strip(),
@@ -132,6 +173,7 @@ class VistaAjustes:
 
         pintar_clave()
         pintar_informe()
+        pintar_os()
         return ft.Column([
             titulo("Ajustes", f"Versión instalada: {VERSION}"),
             tarjeta(ft.Column([seccion("Reclamos"), claude], spacing=14)),
@@ -157,6 +199,16 @@ class VistaAjustes:
                                                  dialog_title="Elegir el informe exportado de Virtual Seller",
                                                  allowed_extensions=["csv"]))]),
                 progreso_informe, estado_informe,
+            ], spacing=12)),
+            tarjeta(ft.Column([
+                seccion("Reparaciones"),
+                planilla_rep,
+                ft.Text("Informe \"OS para APP\" de Virtual Seller → Exportar detalles → UTF-8 y .csv.", size=12,
+                        color=ft.Colors.ON_SURFACE_VARIANT),
+                ft.Row([ft.FilledTonalButton("Importar informe de OS .csv", icon=ft.Icons.UPLOAD_FILE,
+                                             on_click=lambda _: selector_os.pick_files(
+                                                 dialog_title="Elegir el informe de OS", allowed_extensions=["csv"]))]),
+                estado_os,
             ], spacing=12)),
             tarjeta(ft.Column([seccion("Emails"), para_transf, para_cancel], spacing=14)),
             tarjeta(ft.Column([seccion("Actualizaciones"), ft.Row([ultima, minima], spacing=16), descarga],

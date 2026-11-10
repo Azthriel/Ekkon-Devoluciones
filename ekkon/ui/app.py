@@ -10,6 +10,8 @@ from ..local import abrir_url
 
 from .. import local, settings
 from ..datos import ConfigApp, Devoluciones, Usuarios
+from ..os_idx import IndiceOS
+from ..reparaciones import Reparaciones
 from ..ventas import Indice
 from ..firebase import Auth, FirebaseError, Firestore, Sesion
 from ..version import VERSION, comparar
@@ -30,6 +32,8 @@ class App:
         self.usuarios = Usuarios(self.fs)
         self.cfg = ConfigApp(self.fs)
         self.indice = Indice(self.fs)
+        self.indice_os = IndiceOS(self.fs)
+        self.reparaciones = Reparaciones(self.fs)
         self.selector_fotos = ft.FilePicker()
         self._vigilante: threading.Thread | None = None
         # La sincronización espera a que terminen las correcciones automáticas (evita filas repetidas)
@@ -37,6 +41,10 @@ class App:
         self._seccion_actual = 0
 
     # ------------------------------------------------------------ sesión
+
+    @property
+    def es_service(self) -> bool:
+        return bool(self.usuario and self.usuario.get("rol") == "service")
 
     @property
     def es_admin(self) -> bool:
@@ -354,12 +362,18 @@ class App:
         from .ajustes import VistaAjustes
         from .emails import VistaEmails
         from .cancelaciones import VistaCancelaciones
+        from .reparaciones import VistaReparaciones
+
+        reparaciones = ("Reparaciones", ft.Icons.BUILD_OUTLINED, ft.Icons.BUILD,
+                        lambda: VistaReparaciones(self).control())
 
         secciones = [
             ("Cargar", ft.Icons.ADD_A_PHOTO_OUTLINED, ft.Icons.ADD_A_PHOTO, lambda: VistaCarga(self).control()),
             ("Devoluciones", ft.Icons.LIST_ALT_OUTLINED, ft.Icons.LIST_ALT,
              lambda: VistaLista(self).control()),
         ]
+        if self.es_service:
+            secciones.append(reparaciones)
         if self.es_admin:
             secciones += [
                 ("Pendientes", ft.Icons.HOURGLASS_EMPTY, ft.Icons.HOURGLASS_FULL,
@@ -367,6 +381,7 @@ class App:
                 ("Transferencias", ft.Icons.MOVE_UP_OUTLINED, ft.Icons.MOVE_UP, lambda: VistaEmails(self).control()),
                 ("Cancelaciones", ft.Icons.REMOVE_SHOPPING_CART_OUTLINED, ft.Icons.REMOVE_SHOPPING_CART,
                  lambda: VistaCancelaciones(self).control()),
+                reparaciones,
                 ("Usuarios", ft.Icons.PEOPLE_OUTLINE, ft.Icons.PEOPLE, lambda: VistaUsuarios(self).control()),
                 ("Ajustes", ft.Icons.SETTINGS_OUTLINED, ft.Icons.SETTINGS, lambda: VistaAjustes(self).control()),
             ]

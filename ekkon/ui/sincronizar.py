@@ -6,6 +6,7 @@ import datetime
 import flet as ft
 
 from ..firebase import FirebaseError
+from .. import reparaciones as R
 from ..planilla import planificar
 from ..sheets import Planilla, SheetsError, id_de_link
 
@@ -30,6 +31,18 @@ def sincronizar(app, al_terminar=None) -> None:
             ventas = app.indice.todas()
         except FirebaseError:
             ventas = {}
+        # Reparaciones terminadas de devoluciones: agregan la nota y cambian la clasificación
+        cambios_rep: dict[str, dict] = {}
+        try:
+            reps = {R.clave(r.get("numero")): r for r in app.reparaciones.listar() if R.es_venta(R.clave(r.get("numero")))}
+        except FirebaseError:
+            reps = {}
+        for d in devoluciones:
+            r = reps.get(d.get("numero_venta", ""))
+            cambios = R.cambios_para_devolucion(d, r) if r else {}
+            if cambios:
+                d.update(cambios)
+                cambios_rep[d["numero_venta"]] = cambios
         plan = planificar(hoja, devoluciones, ventas)
     except (SheetsError, ValueError, FirebaseError) as e:
         page.close(espera)
@@ -63,6 +76,9 @@ def sincronizar(app, al_terminar=None) -> None:
             detalle = f"→ Venta # {vs[0]}" if len(vs) == 1 else f"→ carrito con {len(vs)} ventas, corregir a mano"
             lineas.append(ft.Text(f"   {a1}: {carrito} {detalle}", size=12))
         lineas.append(corregir)
+    if cambios_rep:
+        lineas.append(ft.Text(f"• {len(cambios_rep)} devolución(es) con la reparación terminada: se agrega la nota "
+                              "y se actualiza la clasificación."))
     if plan.duplicadas:
         lineas.append(ft.Text("Ventas cargadas dos veces en el programa (se escribe una sola fila):",
                               weight=ft.FontWeight.W_600, color=ft.Colors.AMBER_800))
@@ -102,6 +118,11 @@ def sincronizar(app, al_terminar=None) -> None:
         for doc_id in plan.planilla_en:
             try:
                 app.devs.actualizar(doc_id, {"planilla_en": hoy})
+            except FirebaseError:
+                pass
+        for numero, cambios in cambios_rep.items():
+            try:
+                app.devs.actualizar(numero, cambios)
             except FirebaseError:
                 pass
         # Lo que se completó en la planilla con el informe también queda en el programa

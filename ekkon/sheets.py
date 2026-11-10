@@ -70,7 +70,8 @@ class Planilla:
         if not spreadsheet_id:
             raise SheetsError("Falta el link de la planilla en Ajustes.")
         self.id = spreadsheet_id
-        self.hoja = hoja or settings.HOJA_PLANILLA
+        # hoja="" -> la primera hoja del archivo (la de Reparaciones se llama "Hoja 1")
+        self.hoja = settings.HOJA_PLANILLA if hoja is None else hoja
         if sesion is None:
             info = info or leer_clave()
             if not info:
@@ -107,7 +108,10 @@ class Planilla:
     def gid(self) -> int:
         if self._gid is None:
             d = self._req("GET", "", params={"fields": "sheets.properties(sheetId,title)"})
-            for s in d.get("sheets", []):
+            hojas = d.get("sheets", [])
+            if not self.hoja and hojas:
+                self.hoja = hojas[0]["properties"]["title"]
+            for s in hojas:
                 if s["properties"]["title"].strip().lower() == self.hoja.strip().lower():
                     self._gid = s["properties"]["sheetId"]
                     break
@@ -116,12 +120,12 @@ class Planilla:
                 raise SheetsError(f"No existe la hoja \"{self.hoja}\". Hojas encontradas: {nombres}.")
         return self._gid
 
-    def leer(self) -> Hoja:
+    def leer(self, fabrica=None) -> Hoja:
         self.gid()
         d = self._req("GET", f"/values/{quote(self._rango('A1:AZ'), safe='')}",
                       params={"valueRenderOption": "UNFORMATTED_VALUE",
                               "dateTimeRenderOption": "SERIAL_NUMBER"})
-        return Hoja(d.get("values", []))
+        return (fabrica or Hoja)(d.get("values", []))
 
     # ------------------------------------------------------------ estructura de la hoja
 
