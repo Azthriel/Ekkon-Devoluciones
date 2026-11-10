@@ -11,7 +11,8 @@ from .. import local, settings
 from ..datos import descripcion_clasificacion, guia_mercadolibre, importe, solo_digitos
 from ..firebase import FirebaseError
 from ..fotos import miniatura_b64
-from .comun import chip_estado, fecha_corta, hoy_iso, seccion, tarjeta, titulo
+from . import comun
+from .comun import chip_estado, fecha_corta, fila, hoy_iso, pegar, seccion, tarjeta, tarjeta_lista, titulo
 
 ESTADOS_PENDIENTES = ("reclamado", "pendiente")
 
@@ -42,6 +43,14 @@ class VistaLista:
             rows=[], heading_row_height=40, data_row_min_height=44, data_row_max_height=52,
             column_spacing=22, show_checkbox_column=False, expand=True)
         self.cargando = ft.ProgressBar(visible=False)
+        # En el celular, tarjetas en lugar de la tabla
+        self.lista_movil = ft.ListView(spacing=8, expand=True)
+        if comun.MOVIL:
+            self.buscar.width = None
+            self.buscar.expand = True
+            self.buscar.hint_text = "Buscar venta, carrito, SKU…"
+            self.filtro.width = self.filtro_pend.width = None
+            self.filtro.expand = self.filtro_pend.expand = True
 
     # ------------------------------------------------------------ armado
 
@@ -63,6 +72,16 @@ class VistaLista:
             filtros += [self.filtro_pend]
         filtros += [ft.IconButton(ft.Icons.REFRESH, tooltip="Actualizar", on_click=lambda _: self.recargar()),
                     self.contador]
+        if comun.MOVIL:
+            segunda = [self.filtro, self.solo_hoy] if self.modo != "pendientes" else [self.filtro_pend]
+            return ft.Column([
+                ft.Row([self.buscar, ft.IconButton(ft.Icons.REFRESH, tooltip="Actualizar",
+                                                   on_click=lambda _: self.recargar())]),
+                ft.Row(segunda, spacing=8),
+                ft.Row([self.contador]),
+                self.cargando,
+                self.lista_movil,
+            ], spacing=8, expand=True)
         if self.app.es_admin:
             # El botón va arriba a la derecha, junto al título, así no se sale de la pantalla
             from .sincronizar import sincronizar
@@ -138,9 +157,27 @@ class VistaLista:
             salida.append(d)
         return salida
 
+    def _tarjeta(self, d: dict, hoy: str) -> ft.Control:
+        vence = d.get("fecha_vencimiento", "")
+        urgente = vence and vence <= hoy and d.get("estado") in ("cargada", "reclamo_armado")
+        nc = ("NC hecha" if d.get("nc_realizada") else "No lleva NC" if not settings.necesita_nc(d) else "NC pendiente")
+        detalle = d.get("producto") or d.get("codigo_producto") or ""
+        return tarjeta_lista(ft.Column([
+            ft.Row([ft.Text(d.get("numero_venta", ""), weight=ft.FontWeight.W_700, size=15),
+                    chip_estado(d.get("estado", ""))], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            *([ft.Text(detalle, size=12, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)] if detalle else []),
+            ft.Row([ft.Text(f"Vence {fecha_corta(vence)}", size=12,
+                            color=ft.Colors.ERROR if urgente else ft.Colors.ON_SURFACE_VARIANT,
+                            weight=ft.FontWeight.W_600 if urgente else None),
+                    ft.Text(f"Clasif. {d.get('clasificacion', '—')}", size=12, color=ft.Colors.ON_SURFACE_VARIANT),
+                    ft.Text(nc, size=12, color=ft.Colors.ON_SURFACE_VARIANT)], spacing=12, wrap=True),
+        ], spacing=4), lambda d=d: self.abrir_detalle(d))
+
     def _pintar(self) -> None:
         hoy = hoy_iso()
         filas = self._visibles()
+        if comun.MOVIL:
+            self.lista_movil.controls = [self._tarjeta(d, hoy) for d in filas[:300]]
         self.tabla.rows = []
         for d in filas:
             vence = d.get("fecha_vencimiento", "")
@@ -221,7 +258,10 @@ class VistaLista:
                                       bgcolor=ft.Colors.with_opacity(0.12, ft.Colors.PRIMARY)))
         if g["nota"]:
             filas.append(ft.Text(g["nota"], size=12, color=ft.Colors.AMBER_800))
-        filas += [ft.Text(f"{i}. {p}", size=13) for i, p in enumerate(g["pasos"], 1)]
+        pasos = g["pasos"]
+        if comun.MOVIL:
+            pasos = [p.replace('"Abrir fotos"', '"Fotos a la galería"') for p in pasos]
+        filas += [ft.Text(f"{i}. {p}", size=13) for i, p in enumerate(pasos, 1)]
         pct = d.get("porcentaje_sugerido")
         botones: list[ft.Control] = [
             ft.OutlinedButton("Ver venta en ML", icon=ft.Icons.OPEN_IN_NEW,
@@ -230,8 +270,9 @@ class VistaLista:
             botones += [
                 ft.OutlinedButton("Copiar mensaje", icon=ft.Icons.COPY, disabled=not mensaje,
                                   on_click=lambda _: (self.page.set_clipboard(mensaje),
-                                                      self.app.avisar("Mensaje copiado. Péguelo en ML con Ctrl+V."))),
-                ft.OutlinedButton("Abrir fotos", icon=ft.Icons.FOLDER_OPEN, on_click=abrir_carpeta),
+                                                      self.app.avisar(f"Mensaje copiado. Péguelo en ML ({pegar()})."))),
+                ft.OutlinedButton("Fotos a la galería" if comun.MOVIL else "Abrir fotos", icon=ft.Icons.FOLDER_OPEN,
+                                  on_click=abrir_carpeta),
                 ft.FilledButton("Marcar reclamo enviado", icon=ft.Icons.SEND, disabled=not mensaje,
                                 on_click=lambda _: (cerrar(), self._reclamo_enviado(d))),
             ]
@@ -273,7 +314,7 @@ class VistaLista:
         cuerpo: list[ft.Control] = [
             ft.Row([chip_estado(d.get("estado", "")),
                     ft.Text(f"Cargó {d.get('cargado_por', '')} el {fecha_corta(d.get('cargado_en'))}",
-                            size=12, color=ft.Colors.ON_SURFACE_VARIANT)], spacing=12),
+                            size=12, color=ft.Colors.ON_SURFACE_VARIANT)], spacing=12, wrap=True),
             ft.Row([dato("Vence", fecha_corta(d.get("fecha_vencimiento"))),
                     dato("Clasificación", descripcion_clasificacion(d.get("clasificacion", ""))),
                     dato("Código", d.get("codigo_producto")),
@@ -325,7 +366,8 @@ class VistaLista:
         cuerpo += [seccion(f"Fotos ({d.get('fotos', 0)})"), galeria]
 
         dlg = ft.AlertDialog(
-            title=ft.Text(f"Venta {d.get('numero_venta')}"),
+            title=ft.Text(f"Venta {d.get('numero_venta')}", size=18 if comun.MOVIL else None),
+            inset_padding=ft.padding.symmetric(16, 10) if comun.MOVIL else None,
             content=ft.Container(ft.Column(cuerpo, spacing=14, scroll=ft.ScrollMode.AUTO, tight=True),
                                  width=760),
         )
@@ -334,8 +376,14 @@ class VistaLista:
             self.page.close(dlg)
 
         def abrir_carpeta(_):
-            if fotos:
-                local.abrir_carpeta(local.guardar_fotos(d["numero_venta"], fotos))
+            if not fotos:
+                return
+            if comun.MOVIL:
+                lugar = local.guardar_en_galeria(d["numero_venta"], fotos)
+                self.app.avisar("Fotos guardadas en la galería, carpeta Ekkon." if lugar else
+                                "No se pudieron guardar las fotos en la galería.", error=not lugar)
+                return
+            local.abrir_carpeta(local.guardar_fotos(d["numero_venta"], fotos))
 
         def editar(_):
             cerrar()
@@ -348,7 +396,8 @@ class VistaLista:
             self.contenedor.content = VistaCarga(self.app, existente=d, al_terminar=volver).control()
             self._actualizar()
 
-        acciones: list[ft.Control] = [ft.TextButton("Abrir fotos en carpeta", icon=ft.Icons.FOLDER_OPEN,
+        acciones: list[ft.Control] = [ft.TextButton("Guardar fotos en la galería" if comun.MOVIL else
+                                                    "Abrir fotos en carpeta", icon=ft.Icons.FOLDER_OPEN,
                                                     on_click=abrir_carpeta)]
         guia = self._guia(d, url_venta, mensaje, abrir_carpeta, cerrar)
         if guia:
@@ -378,7 +427,8 @@ class VistaLista:
 
         try:
             fotos.extend(self.app.devs.fotos(d["numero_venta"]))
-            galeria.controls = [ft.Image(src_base64=miniatura_b64(f, 400), width=170, height=170,
+            lado = 120 if comun.MOVIL else 170
+            galeria.controls = [ft.Image(src_base64=miniatura_b64(f, 400), width=lado, height=lado,
                                          fit=ft.ImageFit.COVER, border_radius=ft.border_radius.all(10))
                                 for f in fotos] or [ft.Text("Sin fotos")]
         except FirebaseError as e:
@@ -469,7 +519,7 @@ class VistaLista:
     def _reclamo_enviado(self, d: dict) -> None:
         # Sin filtro de teclado: el filtro hacía fallar el pegado. Los números se limpian al guardar.
         mediacion = ft.TextField(label="N° de mediación / reclamo en ML (opcional)", autofocus=True,
-                                 helper_text="Pegue el número con Ctrl+V.")
+                                 helper_text=f"Pegue el número ({pegar()}).")
         dlg = ft.AlertDialog(modal=True, title=ft.Text(f"Reclamo enviado — {d['numero_venta']}"),
                              content=ft.Container(mediacion, width=420))
 
@@ -495,9 +545,10 @@ class VistaLista:
         resultado = ft.RadioGroup(content=ft.Row([
             ft.Radio(value="cobertura", label="Hubo cobertura"),
             ft.Radio(value="sin_cobertura", label="No hubo cobertura"),
-        ]), value="cobertura")
+        ], wrap=True), value="cobertura")
         monto = ft.TextField(label="Monto reintegrado", prefix_text="$ ", width=220)
-        movimiento = ft.TextField(label="N° de movimiento / ID de Devolución por Compra Protegida", expand=True)
+        movimiento = ft.TextField(label="N° de movimiento / ID de Devolución por Compra Protegida",
+                                  expand=None if comun.MOVIL else True)
         error = ft.Text("", color=ft.Colors.ERROR, visible=False)
 
         def cambio(_):
@@ -509,7 +560,7 @@ class VistaLista:
         dlg = ft.AlertDialog(
             modal=True,
             title=ft.Text(f"Resultado del reclamo — {d['numero_venta']}"),
-            content=ft.Container(ft.Column([resultado, ft.Row([monto, movimiento]), error], tight=True,
+            content=ft.Container(ft.Column([resultado, fila([monto, movimiento]), error], tight=True,
                                            spacing=14), width=640),
         )
 

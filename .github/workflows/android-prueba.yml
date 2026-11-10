@@ -1,0 +1,65 @@
+name: Probar .apk en emulador
+
+on:
+  push:
+    branches: [proximo]
+    paths-ignore: ["**.md"]
+  workflow_dispatch:
+
+jobs:
+  prueba:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Instalar Flet
+        run: pip install "flet[all]==0.28.3" pillow
+
+      - name: Cache de Flutter
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/flutter
+            ~/.pub-cache
+            ~/.gradle/caches
+          key: flet-0.28.3-android-prueba-${{ runner.os }}-v1
+
+      - name: Compilar .apk x86_64 (para el emulador)
+        run: |
+          export FLET_ANDROID_SIGNING_KEY_STORE_PASSWORD="$(cat android/clave.txt)"
+          export FLET_ANDROID_SIGNING_KEY_PASSWORD="$FLET_ANDROID_SIGNING_KEY_STORE_PASSWORD"
+          flet build apk . --no-rich-output --skip-flutter-doctor --arch x86_64 \
+            --android-signing-key-store "$GITHUB_WORKSPACE/android/ekkon.jks" --android-signing-key-alias ekkon \
+            --project ekkondevoluciones --product "Ekkon Devoluciones" --org com.ekkon
+          ls -la build/apk
+
+      - name: Habilitar KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Probar en el emulador
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 33
+          arch: x86_64
+          target: google_apis
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: bash .github/scripts/prueba_android.sh

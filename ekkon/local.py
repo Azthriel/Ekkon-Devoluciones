@@ -8,8 +8,14 @@ import sys
 from pathlib import Path
 
 
+def es_android() -> bool:
+    return bool(os.environ.get("ANDROID_DATA") or os.environ.get("ANDROID_ROOT") or hasattr(sys, "getandroidapilevel"))
+
+
 def carpeta_datos() -> Path:
-    base = os.environ.get("LOCALAPPDATA") or os.path.join(Path.home(), ".local", "share")
+    # En el celular, Flet indica la carpeta privada de la app
+    base = (os.environ.get("FLET_APP_STORAGE_DATA") or os.environ.get("LOCALAPPDATA")
+            or os.path.join(Path.home(), ".local", "share"))
     p = Path(base) / "EkkonDevoluciones"
     p.mkdir(parents=True, exist_ok=True)
     return p
@@ -50,6 +56,25 @@ def guardar_fotos(numero_venta: str, fotos: list[bytes]) -> Path:
     for i, data in enumerate(fotos, 1):
         (carpeta / f"{numero_venta}_{i:02d}.jpg").write_bytes(data)
     return carpeta
+
+
+CARPETAS_GALERIA = ["/storage/emulated/0/Pictures", "/sdcard/Pictures", "/storage/emulated/0/DCIM"]
+
+
+def guardar_en_galeria(numero_venta: str, fotos: list[bytes]) -> str | None:
+    """En Android, deja las fotos en la galería (Imágenes/Ekkon). Devuelve la carpeta o None si no se pudo."""
+    for base in CARPETAS_GALERIA:
+        carpeta = Path(base) / "Ekkon" / numero_venta
+        try:
+            carpeta.mkdir(parents=True, exist_ok=True)
+            for i, data in enumerate(fotos, 1):
+                destino = carpeta / f"{numero_venta}_{i:02d}.jpg"
+                if not destino.exists():
+                    destino.write_bytes(data)
+            return str(carpeta)
+        except OSError:
+            continue
+    return None
 
 
 def abrir_carpeta(ruta: Path) -> None:

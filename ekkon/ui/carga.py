@@ -12,7 +12,8 @@ from ..datos import armar_prompt, leer_respuesta_claude, validar_numero_venta
 from ..firebase import FirebaseError
 from ..ventas import Venta
 from ..fotos import comprimir, miniatura_b64
-from .comun import seccion, tarjeta, titulo
+from . import comun
+from .comun import encabezado, fila, pegar, seccion, tarjeta, titulo
 
 URL_CLAUDE_POR_DEFECTO = "https://claude.ai/projects"
 
@@ -41,7 +42,7 @@ class VistaCarga:
         self.numero = ft.TextField(
             label="Venta # o ID Carrito *", hint_text="2000012345678901", width=320,
             prefix_icon=ft.Icons.TAG, on_change=self._validar_numero, on_blur=self._verificar_duplicado,
-            read_only=self.editando)
+            read_only=self.editando, keyboard_type=ft.KeyboardType.NUMBER if comun.MOVIL else None)
         self.info_venta = ft.Container(visible=False, border_radius=10, padding=ft.padding.symmetric(10, 14))
         self.btn_vence = ft.OutlinedButton(icon=ft.Icons.EVENT, on_click=self._elegir_fecha, height=48)
         self.selector_fecha = ft.DatePicker(
@@ -95,21 +96,29 @@ class VistaCarga:
                                               on_click=self._armar_reclamo, height=46)
         self.btn_pegar = ft.OutlinedButton("Pegar respuesta de Claude", icon=ft.Icons.CONTENT_PASTE,
                                            on_click=self._pegar_respuesta, height=46)
+        if comun.MOVIL:
+            ayuda = ("1) \"Armar reclamo\" copia los datos, deja las fotos en la galería (carpeta Ekkon) y abre "
+                     "Claude. 2) En Claude, mantenga presionado y toque Pegar, adjunte las fotos desde la galería "
+                     "y envíe. 3) Copie la respuesta y toque \"Pegar respuesta de Claude\".")
+            self.mensaje.expand = None
+            fila_mensaje = ft.Column([self.mensaje, self.porcentaje], spacing=10)
+        else:
+            ayuda = ("1) \"Armar reclamo\" copia los datos, abre el proyecto de Claude y la carpeta con las fotos. "
+                     "2) Pegue con Ctrl+V en Claude y arrastre las fotos. "
+                     "3) Copie la respuesta y toque \"Pegar respuesta de Claude\".")
+            fila_mensaje = ft.Row([self.mensaje, self.porcentaje], vertical_alignment=ft.CrossAxisAlignment.START)
         self.panel_reclamo = ft.Column([
             seccion("Reclamo"),
-            ft.Text("1) \"Armar reclamo\" copia los datos, abre el proyecto de Claude y la carpeta con las fotos. "
-                    "2) Pegue con Ctrl+V en Claude y arrastre las fotos. "
-                    "3) Copie la respuesta y toque \"Pegar respuesta de Claude\".",
-                    size=12, color=ft.Colors.ON_SURFACE_VARIANT),
-            ft.Row([self.btn_armar, self.btn_pegar], wrap=True),
-            ft.Row([self.mensaje, self.porcentaje], vertical_alignment=ft.CrossAxisAlignment.START),
+            ft.Text(ayuda, size=12, color=ft.Colors.ON_SURFACE_VARIANT),
+            ft.Row([self.btn_armar, self.btn_pegar], wrap=True, run_spacing=8),
+            fila_mensaje,
         ], spacing=12)
 
         self.btn_guardar = ft.FilledButton("Guardar", icon=ft.Icons.SAVE, on_click=self._guardar, height=46)
         self.btn_limpiar = ft.TextButton("Limpiar", icon=ft.Icons.CLEAR_ALL, on_click=self._limpiar)
         self.progreso = ft.ProgressBar(visible=False)
         self.fila_pasos = ft.Row(wrap=True, spacing=8, run_spacing=8)
-        self.siguiente = ft.Text(size=14, weight=ft.FontWeight.W_600)
+        self.siguiente = ft.Text(size=14, weight=ft.FontWeight.W_600, expand=True)
         self._actualizar_fecha()
         self._actualizar_pasos(actualizar=False)
 
@@ -117,16 +126,15 @@ class VistaCarga:
         if self.selector_fecha not in self.page.overlay:
             self.page.overlay.append(self.selector_fecha)
         if self.editando:
-            encabezado = titulo(f"Editar venta {self.existente['numero_venta']}",
-                                "Los cambios se guardan sobre la carga existente.")
+            encabezado_ = titulo(f"Editar venta {self.existente['numero_venta']}",
+                                 "Los cambios se guardan sobre la carga existente.")
         else:
-            encabezado = ft.Row([
+            encabezado_ = encabezado(
                 titulo("Cargar devolución", "Complete los datos y las fotos del producto devuelto."),
                 ft.OutlinedButton("Ver en ML las que vencen hoy", icon=ft.Icons.OPEN_IN_NEW,
-                                  on_click=lambda _: abrir_url(page=self.page, url=settings.URL_ML_VENCEN_HOY)),
-            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN, vertical_alignment=ft.CrossAxisAlignment.START)
+                                  on_click=lambda _: abrir_url(page=self.page, url=settings.URL_ML_VENCEN_HOY)))
         cuerpo = ft.Column([
-            encabezado,
+            encabezado_,
             ft.Container(ft.Column([self.fila_pasos, ft.Row([ft.Icon(ft.Icons.ARROW_FORWARD, size=18,
                                                                      color=ft.Colors.PRIMARY), self.siguiente])],
                                    spacing=10),
@@ -134,19 +142,17 @@ class VistaCarga:
                          bgcolor=ft.Colors.with_opacity(0.08, ft.Colors.PRIMARY)),
             tarjeta(ft.Column([
                 seccion("Venta"),
-                ft.Row([self.numero, ft.Column([ft.Text("Vence el reclamo", size=12), self.btn_vence], spacing=2),
-                        self.deposito], wrap=True, spacing=16, vertical_alignment=ft.CrossAxisAlignment.START),
+                fila([self.numero, ft.Column([ft.Text("Vence el reclamo", size=12), self.btn_vence], spacing=2),
+                      self.deposito]),
                 self.info_venta,
-                ft.Row([self.motivo, self.codigo], wrap=True, spacing=16,
-                       vertical_alignment=ft.CrossAxisAlignment.START),
+                fila([self.motivo, self.codigo]),
                 self.problema,
             ], spacing=14)),
             tarjeta(ft.Column([
                 seccion("Clasificación, estado y fotos"),
-                ft.Row([self.clasif, self.condicion], wrap=True, spacing=16,
-                       vertical_alignment=ft.CrossAxisAlignment.START),
+                fila([self.clasif, self.condicion]),
                 self.descripcion,
-                ft.Row([self.btn_fotos, self.txt_fotos], spacing=12),
+                ft.Row([self.btn_fotos, self.txt_fotos], spacing=12, wrap=True),
                 self.galeria,
             ], spacing=14)),
             tarjeta(ft.Column([self.reclamo, self.panel_reclamo], spacing=14)),
@@ -364,16 +370,17 @@ class VistaCarga:
 
     def _refrescar_galeria(self, actualizar: bool = True) -> None:
         self.galeria.controls = []
+        lado = 100 if comun.MOVIL else 150
         for i, data in enumerate(self.fotos):
             self.galeria.controls.append(ft.Stack([
-                ft.Image(src_base64=miniatura_b64(data), width=150, height=150, fit=ft.ImageFit.COVER,
+                ft.Image(src_base64=miniatura_b64(data), width=lado, height=lado, fit=ft.ImageFit.COVER,
                          border_radius=ft.border_radius.all(10)),
                 ft.Container(ft.IconButton(ft.Icons.CLOSE, icon_size=16, tooltip="Quitar",
                                            on_click=lambda _, i=i: self._quitar_foto(i),
                                            style=ft.ButtonStyle(bgcolor=ft.Colors.with_opacity(0.75, ft.Colors.BLACK),
                                                                 color=ft.Colors.WHITE)),
                              right=4, top=4),
-            ], width=150, height=150))
+            ], width=lado, height=lado))
         n = len(self.fotos)
         self.txt_fotos.value = f"{n} foto(s) — máximo {settings.FOTOS_MAX_POR_DEVOLUCION}" if n else "Sin fotos"
         self._actualizar_pasos(actualizar)
@@ -472,6 +479,12 @@ class VistaCarga:
                 return
             prompt = armar_prompt(datos, len(self.fotos))
             self.page.set_clipboard(prompt)
+            if comun.MOVIL:
+                galeria = local.guardar_en_galeria(datos["numero_venta"], self.fotos)
+                abrir_url(page=self.page, url=self.app.config.get("claude_project_url") or URL_CLAUDE_POR_DEFECTO)
+                self.app.avisar("Datos copiados. En Claude, mantenga presionado y toque Pegar, y adjunte las fotos "
+                                + ("de la carpeta Ekkon de la galería." if galeria else "desde la galería."))
+                return
             carpeta = local.guardar_fotos(datos["numero_venta"], self.fotos)
             local.abrir_carpeta(carpeta)
             abrir_url(page=self.page, url=self.app.config.get("claude_project_url") or URL_CLAUDE_POR_DEFECTO)
@@ -558,6 +571,9 @@ class VistaCarga:
         if reclamo:
             pasos.append(("Reclamo", bool((self.mensaje.value or "").strip()),
                           "Toque \"Armar reclamo\" y después \"Pegar respuesta de Claude\"."))
+        if comun.MOVIL:
+            pasos[0] = (pasos[0][0], pasos[0][1], f"Copie el número en ML y péguelo ({pegar()}).")
+            pasos[5] = (pasos[5][0], pasos[5][1], "Saque las fotos con la cámara y elíjalas con \"Agregar fotos\".")
         self.fila_pasos.controls = []
         for i, (nombre, ok, _ayuda) in enumerate(pasos, 1):
             color = ft.Colors.GREEN_700 if ok else ft.Colors.OUTLINE

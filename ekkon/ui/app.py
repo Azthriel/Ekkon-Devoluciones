@@ -1,6 +1,7 @@
 """Controlador principal: sesión, permisos y navegación."""
 from __future__ import annotations
 
+import os
 import threading
 import time
 
@@ -15,6 +16,7 @@ from ..reparaciones import Reparaciones
 from ..ventas import Indice
 from ..firebase import Auth, FirebaseError, Firestore, Sesion
 from ..version import VERSION, comparar
+from . import comun
 from .comun import COLOR_SEMILLA, tarjeta
 
 INTERVALO_CONTROL = 300  # segundos entre controles de usuario activo
@@ -47,6 +49,10 @@ class App:
         return bool(self.usuario and self.usuario.get("rol") == "service")
 
     @property
+    def movil(self) -> bool:
+        return comun.MOVIL
+
+    @property
     def es_admin(self) -> bool:
         return bool(self.usuario and self.usuario.get("rol") == "admin")
 
@@ -66,11 +72,15 @@ class App:
         p.dark_theme = ft.Theme(color_scheme_seed=COLOR_SEMILLA, use_material3=True)
         p.theme_mode = ft.ThemeMode.LIGHT
         p.padding = 0
-        p.window.width = 1320
-        p.window.height = 860
-        p.window.min_width = 900
-        p.window.min_height = 560
+        comun.MOVIL = p.platform in (ft.PagePlatform.ANDROID, ft.PagePlatform.IOS) or bool(os.environ.get("EKKON_MOVIL"))
+        if not comun.MOVIL:
+            p.window.width = 1320
+            p.window.height = 860
+            p.window.min_width = 900
+            p.window.min_height = 560
         p.overlay.append(self.selector_fotos)
+        if comun.MOVIL:
+            self._diagnostico()
 
         if not settings.FIREBASE_API_KEY:
             self._pantalla_mensaje("Falta configurar Firebase",
@@ -88,6 +98,18 @@ class App:
             except FirebaseError:
                 local.borrar_sesion()
         self.mostrar_login()
+
+    @staticmethod
+    def _diagnostico() -> None:
+        """Deja en el registro del celular si cargaron las librerías (sirve para la prueba en el emulador)."""
+        partes = []
+        for mod in ("PIL.Image", "requests", "certifi"):
+            try:
+                __import__(mod)
+                partes.append(f"{mod}=ok")
+            except Exception as e:  # noqa: BLE001
+                partes.append(f"{mod}=ERROR {e}")
+        print("EKKON diagnóstico: " + ", ".join(partes) + f", datos={local.carpeta_datos()}", flush=True)
 
     def entrar(self, sesion: Sesion, recordar: bool) -> None:
         self.sesion = sesion
@@ -254,15 +276,18 @@ class App:
 
     # ------------------------------------------------------------ pantallas
 
-    def _set(self, control: ft.Control) -> None:
+    def _set(self, control: ft.Control, appbar=None, barra=None) -> None:
         self.page.controls.clear()
-        self.page.add(control)
+        self.page.appbar = appbar
+        self.page.navigation_bar = barra
+        # En el celular, que no quede debajo de la barra de estado ni de los botones del sistema
+        self.page.add(ft.SafeArea(control, expand=True) if comun.MOVIL else control)
         self.page.update()
 
     def _centrado(self, contenido: ft.Control) -> ft.Control:
         return ft.Container(
             ft.Container(contenido, width=430),
-            alignment=ft.alignment.center, expand=True,
+            alignment=ft.alignment.center, expand=True, padding=12 if comun.MOVIL else None,
             gradient=ft.LinearGradient(
                 begin=ft.alignment.top_left, end=ft.alignment.bottom_right,
                 colors=[ft.Colors.with_opacity(0.10, COLOR_SEMILLA), ft.Colors.with_opacity(0.02, COLOR_SEMILLA)]),
@@ -307,7 +332,8 @@ class App:
                              prefix_icon=ft.Icons.MAIL_OUTLINE, keyboard_type=ft.KeyboardType.EMAIL)
         clave = ft.TextField(label="Contraseña", password=True, can_reveal_password=True,
                              prefix_icon=ft.Icons.LOCK_OUTLINE)
-        recordar = ft.Checkbox(label="Mantener la sesión iniciada en esta PC", value=True)
+        recordar = ft.Checkbox(label="Mantener la sesión iniciada en este " + ("celular" if comun.MOVIL else "equipo"),
+                               value=True)
         error = ft.Text(mensaje or "", color=ft.Colors.ERROR, visible=bool(mensaje))
         boton = ft.FilledButton("Ingresar", icon=ft.Icons.LOGIN, height=46, expand=True)
         progreso = ft.ProgressBar(visible=False)
@@ -374,7 +400,11 @@ class App:
         ]
         if self.es_service:
             secciones.append(reparaciones)
-        if self.es_admin:
+        if self.es_admin and comun.MOVIL:
+            # En el celular, lo del día a día; planillas, emails, usuarios y ajustes quedan en la PC
+            secciones += [("Pendientes", ft.Icons.HOURGLASS_EMPTY, ft.Icons.HOURGLASS_FULL,
+                           lambda: VistaLista(self, modo="pendientes").control()), reparaciones]
+        elif self.es_admin:
             secciones += [
                 ("Pendientes", ft.Icons.HOURGLASS_EMPTY, ft.Icons.HOURGLASS_FULL,
                  lambda: VistaLista(self, modo="pendientes").control()),
@@ -390,10 +420,13 @@ class App:
     def mostrar_shell(self, indice: int = 0) -> None:
         secciones = self._secciones()
         self._seccion_actual = min(indice, len(secciones) - 1)
-        contenido = ft.Container(expand=True, padding=ft.padding.symmetric(20, 28), alignment=ft.alignment.top_left)
+        contenido = ft.Container(expand=True, padding=ft.padding.symmetric(10, 12) if comun.MOVIL
+                                 else ft.padding.symmetric(20, 28), alignment=ft.alignment.top_left)
+        titulo_barra = ft.Text(secciones[self._seccion_actual][0], weight=ft.FontWeight.W_600)
 
         def ir(i: int):
             self._seccion_actual = i
+            titulo_barra.value = secciones[i][0]
             contenido.content = ft.Container(ft.ProgressRing(), alignment=ft.alignment.center)
             self.page.update()
             try:
@@ -403,6 +436,9 @@ class App:
             self.page.update()
 
         nombre = (self.usuario or {}).get("nombre") or (self.usuario or {}).get("email", "")
+        if comun.MOVIL:
+            self._shell_movil(secciones, contenido, titulo_barra, nombre, ir)
+            return
         rail = ft.NavigationRail(
             selected_index=self._seccion_actual,
             label_type=ft.NavigationRailLabelType.ALL,
@@ -427,6 +463,31 @@ class App:
             on_change=lambda e: ir(e.control.selected_index),
         )
         self._set(ft.Row([rail, ft.VerticalDivider(width=1), contenido], expand=True, spacing=0))
+        ir(self._seccion_actual)
+
+    def _shell_movil(self, secciones, contenido, titulo_barra, nombre, ir) -> None:
+        """Celular: barra de arriba con el menú de la cuenta y barra de secciones abajo."""
+        def cerrar_sesion(_):
+            self.confirmar("Cerrar sesión", "¿Desea cerrar la sesión?", self.salir, "Cerrar sesión")
+
+        menu = ft.PopupMenuButton(icon=ft.Icons.ACCOUNT_CIRCLE, items=[
+            ft.PopupMenuItem(text=f"{nombre} · {settings.ROLES.get(self.usuario.get('rol'), '')}", disabled=True),
+            ft.PopupMenuItem(text=f"Versión {VERSION}", disabled=True),
+            ft.PopupMenuItem(),
+            ft.PopupMenuItem(text="Ver el tutorial", icon=ft.Icons.HELP_OUTLINE,
+                             on_click=lambda _: self._abrir_tutorial()),
+            ft.PopupMenuItem(text="Cerrar sesión", icon=ft.Icons.LOGOUT, on_click=cerrar_sesion),
+        ])
+        appbar = ft.AppBar(
+            leading=ft.Container(ft.Icon(ft.Icons.ASSIGNMENT_RETURN, color=ft.Colors.ON_PRIMARY, size=20),
+                                 bgcolor=ft.Colors.PRIMARY, border_radius=10, padding=8, margin=8),
+            title=titulo_barra, actions=[menu],
+            bgcolor=ft.Colors.with_opacity(0.06, COLOR_SEMILLA))
+        barra = ft.NavigationBar(
+            selected_index=self._seccion_actual,
+            destinations=[ft.NavigationBarDestination(icon=s[1], selected_icon=s[2], label=s[0]) for s in secciones],
+            on_change=lambda e: ir(e.control.selected_index))
+        self._set(contenido, appbar=appbar, barra=barra)
         ir(self._seccion_actual)
 
     def _abrir_tutorial(self) -> None:

@@ -2,7 +2,7 @@ name: Compilar .apk
 
 on:
   push:
-    branches: [main, proximo]
+    branches: [main]
     paths-ignore: ["**.md"]
     tags: ["v*"]
   release:

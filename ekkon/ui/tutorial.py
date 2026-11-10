@@ -6,6 +6,7 @@ import json
 import flet as ft
 
 from .. import local
+from . import comun
 
 # Cada paso: (icono, título, [puntos]). Los textos están pensados para leerse en pocos segundos.
 PASOS_CARGA = [
@@ -88,6 +89,30 @@ PASOS_SERVICE = [
 ]
 
 
+# En el celular cambian algunas instrucciones (no hay Ctrl+V ni carpetas)
+TEXTOS_MOVIL = {
+    "Copie el número desde ahí y péguelo con Ctrl+V. No lo escriba a mano.":
+        "Copie el número en ML (mantenga presionado y toque Copiar) y péguelo acá (mantenga presionado y toque "
+        "Pegar). No lo escriba a mano.",
+    "Toque \"Agregar fotos\" y elija las fotos del producto (de 1 a 8).":
+        "Saque las fotos con la cámara del celular. Después toque \"Agregar fotos\" y elíjalas de la galería "
+        "(de 1 a 8).",
+    "Toque \"Armar reclamo\". Se abren Claude y una carpeta con las fotos.":
+        "Toque \"Armar reclamo\". Se copian los datos, las fotos quedan en la galería (carpeta Ekkon) y se abre Claude.",
+    "En Claude: pegue con Ctrl+V, arrastre las fotos desde la carpeta y envíe.":
+        "En Claude: mantenga presionado y toque Pegar, adjunte las fotos desde la galería y envíe.",
+    "Acá se cargan las devoluciones de Mercado Libre. Ya no se usa Notion.":
+        "Acá se cargan las devoluciones de Mercado Libre, también desde el celular.",
+    "Este tutorial tiene pocos pasos. Lo puede volver a abrir cuando quiera con el botón de ayuda (?) "
+    "de la barra izquierda.":
+        "Este tutorial tiene pocos pasos. Lo puede volver a abrir desde el menú de la cuenta (arriba a la derecha).",
+}
+
+
+def _texto(t: str) -> str:
+    return TEXTOS_MOVIL.get(t, t) if comun.MOVIL else t
+
+
 def _archivo(uid: str):
     return local.carpeta_datos() / f"tutorial_{uid}.json"
 
@@ -127,7 +152,8 @@ def mostrar(app) -> None:
         titulo.value = ti
         puntos.controls = [
             ft.Row([ft.Icon(ft.Icons.CHECK_CIRCLE_OUTLINE, size=20, color=ft.Colors.PRIMARY),
-                    ft.Text(t, size=15, expand=True)], vertical_alignment=ft.CrossAxisAlignment.START)
+                    ft.Text(_texto(t), size=14 if comun.MOVIL else 15, expand=True)],
+                   vertical_alignment=ft.CrossAxisAlignment.START)
             for t in items]
         indicador.controls = [
             ft.Container(width=22 if j == i else 8, height=8, border_radius=4,
@@ -154,8 +180,18 @@ def mostrar(app) -> None:
     btn_atras.on_click = lambda _: mover(-1)
     btn_sig.on_click = lambda _: mover(1)
 
+    if comun.MOVIL:
+        icono.size = 40
+        titulo.size = 18
+        indicador.wrap = True
+        acciones = [ft.Column([no_mostrar, ft.Row([btn_atras, btn_sig], alignment=ft.MainAxisAlignment.END)],
+                              spacing=4)]
+    else:
+        acciones = [ft.Row([no_mostrar, ft.Row([btn_atras, btn_sig], tight=True)],
+                           alignment=ft.MainAxisAlignment.SPACE_BETWEEN, width=560)]
     dlg = ft.AlertDialog(
         modal=True,
+        inset_padding=ft.padding.symmetric(16, 12) if comun.MOVIL else None,
         content=ft.Container(ft.Column([
             ft.Row([ft.IconButton(ft.Icons.CLOSE, tooltip="Cerrar tutorial", on_click=cerrar)],
                    alignment=ft.MainAxisAlignment.END),
@@ -163,9 +199,9 @@ def mostrar(app) -> None:
             ft.Container(titulo, alignment=ft.alignment.center),
             ft.Container(puntos, padding=ft.padding.symmetric(8, 6)),
             indicador,
-        ], tight=True, spacing=14), width=560, height=360),
-        actions=[ft.Row([no_mostrar, ft.Row([btn_atras, btn_sig], tight=True)],
-                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN, width=560)],
+        ], tight=True, spacing=14 if not comun.MOVIL else 10, scroll=ft.ScrollMode.AUTO),
+            width=560, height=460 if comun.MOVIL else 360),
+        actions=acciones,
     )
     page.open(dlg)
     pintar()

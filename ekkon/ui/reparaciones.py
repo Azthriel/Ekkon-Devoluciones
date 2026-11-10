@@ -10,7 +10,8 @@ from .. import settings
 from ..datos import importe
 from ..firebase import FirebaseError
 from ..sheets import Planilla, SheetsError, id_de_link
-from .comun import fecha_corta, seccion, tarjeta, titulo
+from . import comun
+from .comun import fecha_corta, seccion, tarjeta, tarjeta_lista, titulo
 
 COLOR_ESTADO_REP = {
     "Para revisar": ft.Colors.BLUE_GREY, "Revisada": ft.Colors.BLUE, "Esperando repuesto": ft.Colors.ORANGE_800,
@@ -49,12 +50,27 @@ class VistaReparaciones:
                      ("N° Venta/OS", "Producto", "Estado", "Causa", "Reparado", "Estado final", "Revisión",
                       "Reparación")],
             rows=[], heading_row_height=40, data_row_min_height=44, data_row_max_height=56, column_spacing=20)
+        self.lista_movil = ft.ListView(spacing=8, expand=True)
+        if comun.MOVIL:
+            self.buscar.width = self.filtro.width = None
+            self.buscar.expand = self.filtro.expand = True
+            self.buscar.hint_text = "Buscar OS, venta, SKU…"
 
     # ------------------------------------------------------------ listado
 
     def control(self) -> ft.Control:
         acciones: list[ft.Control] = [ft.FilledButton("Nueva reparación", icon=ft.Icons.BUILD,
                                                       on_click=lambda _: self.editar(None))]
+        if comun.MOVIL:
+            vista = ft.Column([
+                ft.Row([self.buscar, ft.IconButton(ft.Icons.REFRESH, tooltip="Actualizar",
+                                                   on_click=lambda _: self.recargar())]),
+                ft.Row([self.filtro, acciones[0]], spacing=8),
+                ft.Row([self.contador]),
+                self.lista_movil,
+            ], spacing=8, expand=True)
+            self.recargar(actualizar=False)
+            return vista
         if self.app.es_admin:
             acciones += [ft.FilledTonalButton("Sincronizar planilla", icon=ft.Icons.TABLE_CHART,
                                               on_click=lambda _: self.sincronizar()),
@@ -103,8 +119,22 @@ class VistaReparaciones:
             salida.append(r)
         return salida
 
+    def _tarjeta(self, r: dict) -> ft.Control:
+        abajo = [x for x in (f"Revisión {fecha_corta(r.get('fecha_revision'))}" if r.get("fecha_revision") else "",
+                             f"Final: {r['estado_final']}" if r.get("estado_final") else "",
+                             r.get("causa") or "") if x]
+        return tarjeta_lista(ft.Column([
+            ft.Text(("OS " if not R.es_venta(R.clave(r.get("numero"))) else "Venta ") + str(r.get("numero", "")),
+                    weight=ft.FontWeight.W_700, size=15),
+            ft.Text(r.get("producto") or "—", size=12, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+            chips_estado(r.get("estados")),
+            *([ft.Text("  ·  ".join(abajo), size=12, color=ft.Colors.ON_SURFACE_VARIANT)] if abajo else []),
+        ], spacing=4), lambda r=r: self.editar(r))
+
     def _pintar(self, actualizar: bool = True) -> None:
         filas = self._visibles()
+        if comun.MOVIL:
+            self.lista_movil.controls = [self._tarjeta(r) for r in filas[:300]]
         self.tabla.rows = [ft.DataRow(
             cells=[
                 ft.DataCell(ft.Text(r.get("numero", ""), weight=ft.FontWeight.W_600, selectable=True)),
@@ -132,7 +162,7 @@ class VistaReparaciones:
         info = ft.Text("", size=13, selectable=True)
         opciones_carrito = ft.Row(wrap=True, spacing=6, visible=False)
         carrito = {"id": r.get("carrito", "")}   # ID Carrito original, si se cargó el carrito en vez del Venta #
-        producto = ft.TextField(label="Producto", value=r.get("producto", ""), expand=True)
+        producto = ft.TextField(label="Producto", value=r.get("producto", ""), expand=None if comun.MOVIL else True)
         sku = ft.TextField(label="SKU", value=r.get("sku", ""), width=160)
         seleccion = set(r.get("estados") or ([] if not nueva else ["Para revisar"]))
         chips = ft.Row(wrap=True, spacing=6, run_spacing=6)
@@ -227,7 +257,8 @@ class VistaReparaciones:
         numero.on_blur = buscar
         numero.on_submit = buscar
 
-        dlg = ft.AlertDialog(modal=True, title=ft.Text("Nueva reparación" if nueva else f"Reparación {r.get('numero')}"))
+        dlg = ft.AlertDialog(modal=True, title=ft.Text("Nueva reparación" if nueva else f"Reparación {r.get('numero')}"),
+                             inset_padding=ft.padding.symmetric(16, 10) if comun.MOVIL else None)
 
         def guardar(_):
             k = R.clave(numero.value)
@@ -287,9 +318,10 @@ class VistaReparaciones:
                          f"   ·   Reparación: {fecha_corta(r.get('fecha_reparacion')) if r.get('fecha_reparacion') else 'se pone sola al marcarla reparada'}",
                          size=12, color=ft.Colors.ON_SURFACE_VARIANT)
         dlg.content = ft.Container(ft.Column([
-            ft.Row([numero, ft.OutlinedButton("Buscar producto", icon=ft.Icons.SEARCH, on_click=buscar)]),
+            ft.Row([numero, ft.OutlinedButton("Buscar producto", icon=ft.Icons.SEARCH, on_click=buscar)],
+                   wrap=True, run_spacing=8),
             info, opciones_carrito,
-            ft.Row([producto, sku], spacing=12),
+            ft.Column([producto, sku], spacing=12) if comun.MOVIL else ft.Row([producto, sku], spacing=12),
             seccion("Estado actual (puede elegir varios)"), chips,
             ft.Row([causa, reparado, repuesto], spacing=12, wrap=True),
             a_realizar, hecho,
