@@ -30,6 +30,9 @@ Programa de Windows para cargar y gestionar las devoluciones de Mercado Libre.
   (barra de secciones abajo, listas en tarjetas), fotos desde la galería y "Armar reclamo" con la app de Claude.
   Planillas, emails, usuarios y ajustes quedan en la PC. El .apk se firma con `android/ekkon.jks` (siempre la misma
   clave, para que cada versión se instale encima de la anterior).
+- **Importar de la planilla (0.8)**: en *Devoluciones* (administrador, PC) trae al programa las filas que están solo en la
+  planilla (marcadas como importadas; para ellas manda la planilla). La columna opcional "N° Pedido" se completa con
+  el informe de ventas.
 - **Emails**: arma la solicitud de transferencia con las filas que tienen Transferencia = "A la espera de
   movimiento". Origen siempre Service Podestá (ahí entra la unidad al hacer la NC); destino según "Deposito final".
   Incluye *Abrir en Gmail* y *Marcar como enviado*.

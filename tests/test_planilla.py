@@ -330,3 +330,51 @@ def test_cobertura_marca_reportado_no():
     filas[3][ENCABEZADOS.index("¿Se reporto movimiento?")] = "Si"
     plan = P.planificar(P.Hoja(filas), [d], hoy=HOY)
     assert "W4" not in dict(plan.celdas) and not any(c[1] == "¿Se reporto movimiento?" for c in plan.conflictos)
+
+
+def test_importar_de_la_planilla_y_sincronizar_no_cambia_nada():
+    h = hoja_ejemplo()
+    imp = P.importar_de_hoja(h, existentes={"2000018604612862"}, hoy=HOY)
+    por_venta = {d["numero_venta"]: d for d in imp.nuevas}
+    # La fila con el N° Venta guardado como número (puede tener mal el último dígito) no se importa
+    assert set(por_venta) == {"2000014464776957", "2000014434008281"}
+    assert imp.ya_estaban == 1 and len(imp.omitidas) == 1 and imp.omitidas[0][0] == 3
+    a = por_venta["2000014464776957"]
+    assert a["estado"] == "sin_reclamo" and a["reclamo"] is False and a["nc_realizada"] is True
+    assert a["planilla_en"] == "2026-08-25" and a["clasificacion"] == "N" and a["importada"]
+    assert a["producto"].startswith("KOMMBERG MOTOHOYADORA") and a["codigo_producto"] == "RBXH0014"
+    b = por_venta["2000014434008281"]
+    assert b["estado"] == "reclamado" and b["reclamo"] is True
+    # Sincronizar con las importadas no escribe nada ni reporta diferencias
+    plan = P.planificar(h, imp.nuevas, hoy=HOY)
+    assert plan.celdas == [] and plan.filas_nuevas == [] and plan.conflictos == []
+    # Si después se registra la cobertura en el programa, se escribe
+    b.update(estado="cobertura", monto_reintegrado=15000, numero_movimiento="123")
+    escritas = dict(P.planificar(h, [b], hoy=HOY).celdas)
+    assert escritas["R4"] == "Cobertura" and escritas["U4"] == 15000 and escritas["W4"] == "No"
+
+
+def test_importar_carrito_y_estados():
+    assert P.estado_de_fila("NO cobertura", "si") == "sin_cobertura"
+    assert P.estado_de_fila("Cobertura", "si") == "cobertura"
+    assert P.estado_de_fila("", "si") == "reclamado"
+    assert P.estado_de_fila(None, None) == "sin_reclamo"
+    from ekkon.ventas import Venta
+    ventas = {"2000011111111111": Venta("2000011111111111", "2000015369800002", "PED-1", None, "FPD-0181",
+                                        "MULTIFUNCION", "Podesta", 1, 1000.0)}
+    h = P.Hoja([ENCABEZADOS, fila(**{"Fecha revisión": P.serial(HOY), "N° Venta": "2000015369800002"})])
+    d = P.importar_de_hoja(h, set(), ventas, hoy=HOY).nuevas[0]
+    assert d["numero_venta"] == "2000011111111111" and d["carrito"] == "2000015369800002"
+    assert d["pedido"] == "PED-1" and d["producto"] == "MULTIFUNCION"
+    # Ya cargada en el programa con el ID Carrito: no se duplica
+    assert P.importar_de_hoja(h, {"2000015369800002"}, ventas, hoy=HOY).nuevas == []
+
+
+def test_columna_pedido_se_completa_con_el_informe():
+    from ekkon.ventas import Venta
+    enc = ENCABEZADOS + ["N°Pedido"]
+    f = fila(**{"Fecha revisión": P.serial(HOY), "N° Venta": "2000000000000001", "SKU": "RLA-0045"}) + [None]
+    h = P.Hoja([enc, f])
+    ventas = {"2000000000000001": Venta("2000000000000001", "", "00012345", None, "RLA-0045", "ASPIRADORA",
+                                        "Podestá", 1, None)}
+    assert dict(P.planificar(h, [], ventas, hoy=HOY).celdas)["Y2"] == "'00012345"

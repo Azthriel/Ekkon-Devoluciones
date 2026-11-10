@@ -38,7 +38,13 @@ C_NOTAS = "Notas"
 C_COSTO_ENVIO = "Costo de envio"
 # Columna opcional: si la planilla tiene una columna con alguno de estos nombres, se completa el pedido
 C_PEDIDO = "N° Pedido"
-ALIAS = {C_PEDIDO: ("N° Pedido", "Pedido", "Nro Pedido", "N° de Pedido", "Nro. Pedido")}
+ALIAS = {C_PEDIDO: ("N° Pedido", "Pedido", "Nro Pedido", "N° de Pedido", "Nro. Pedido", "Numero de pedido",
+                    "Num Pedido")}
+
+
+def _compacto(texto) -> str:
+    """Encabezado sin espacios ni puntos: "N°Pedido", "N° Pedido" y "Nro. Pedido" se reconocen igual."""
+    return re.sub(r"[\s.]", "", normalizar(texto))
 
 # Datos que salen del informe de ventas: solo completan celdas vacías y nunca se reportan como diferencia
 COLUMNAS_INFORME = (C_FECHA_COMPRA, C_ARTICULO, C_SKU, C_DEP_ORIGEN, C_COSTO, C_PEDIDO)
@@ -130,6 +136,7 @@ class Hoja:
         self.encabezados = [str(x or "").strip() for x in filas[0]]
         self.filas = filas[1:]
         self.col = {normalizar(h): i for i, h in enumerate(self.encabezados) if h}
+        self.col_compacto = {_compacto(h): i for i, h in enumerate(self.encabezados) if h}
         self.clave = clave or C_VENTA
         self._leer_clave = leer_clave or venta_de_celda
         self._coincide = coincide or coincide_venta
@@ -141,6 +148,8 @@ class Hoja:
     def indice(self, columna: str) -> int | None:
         for nombre in ALIAS.get(columna, (columna,)):
             i = self.col.get(normalizar(nombre))
+            if i is None:
+                i = self.col_compacto.get(_compacto(nombre))
             if i is not None:
                 return i
         return None
@@ -192,7 +201,10 @@ def valores_de(dev: dict, hoy: dt.date | None = None) -> dict:
                        ("condicion", C_CONDICION), ("clasificacion", C_CLASIF)):
         if dev.get(clave):
             v[col] = dev[clave]
-    final = dev.get("deposito_final") or settings.DEPOSITO_FINAL.get(dev.get("clasificacion", ""))
+    importada = bool(dev.get("importada"))
+    # Las importadas de la planilla no completan valores "por defecto": la planilla manda
+    final = dev.get("deposito_final") or (None if importada else
+                                          settings.DEPOSITO_FINAL.get(dev.get("clasificacion", "")))
     if final:
         v[C_DEP_FINAL] = final
     if dev.get("nota_reparacion"):
@@ -220,7 +232,8 @@ def valores_de(dev: dict, hoy: dt.date | None = None) -> dict:
             v[C_MONTO] = dev["monto_reintegrado"]
         if dev.get("numero_movimiento"):
             v[C_MOVIMIENTO] = dev["numero_movimiento"]
-        v[C_REPORTADO] = "No"   # cobertura nueva: todavía no se informó por email
+        if not (importada and dev.get("estado_importado") == "cobertura"):
+            v[C_REPORTADO] = "No"   # cobertura nueva: todavía no se informó por email
     return v
 
 
@@ -250,6 +263,8 @@ def para_escribir(columna: str, valor):
         return "'" + str(valor)  # texto: evita que Sheets lo convierta en número y pierda dígitos
     if columna in (C_MEDIACION, C_MOVIMIENTO) and isinstance(valor, str) and valor.isdigit() and len(valor) > 15:
         return "'" + valor
+    if columna == C_PEDIDO and isinstance(valor, str) and valor.isdigit():
+        return "'" + valor   # texto: conserva los ceros de adelante
     return valor
 
 
@@ -395,7 +410,8 @@ def planificar(hoja: Hoja, devoluciones: list[dict], ventas: dict | None = None,
             siguiente += 1
             continue
         tocadas.add(fila0)
-        _completar_fila(plan, hoja, fila0, valores, venta, reportar=True, pisar=pisar)
+        # Las importadas de la planilla no se reportan como diferencia: ahí manda la planilla
+        _completar_fila(plan, hoja, fila0, valores, venta, reportar=not dev.get("importada"), pisar=pisar)
         _completar_fila(plan, hoja, fila0, informe, venta, reportar=False)
 
     filas_por_venta: dict[str, list[int]] = {}
@@ -433,6 +449,147 @@ def planificar(hoja: Hoja, devoluciones: list[dict], ventas: dict | None = None,
             if len(plan.celdas) > antes:
                 plan.completadas_informe.add(info.venta)
     return plan
+
+
+# ---------------------------------------------------------------- importar de la planilla
+
+def texto_celda(v) -> str:
+    """Valor de una celda como texto (los números enteros sin ".0")."""
+    if v is None or isinstance(v, bool):
+        return ""
+    if isinstance(v, float) and v.is_integer():
+        return str(int(v))
+    return str(v).strip()
+
+
+def numero_celda(v) -> float | None:
+    if isinstance(v, bool) or v is None:
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    t = re.sub(r"[^\d,.\-]", "", str(v))
+    if not t:
+        return None
+    if "," in t:
+        t = t.replace(".", "").replace(",", ".")
+    try:
+        return float(t)
+    except ValueError:
+        return None
+
+
+def estado_de_fila(estado1, reclamo) -> str:
+    """Estado del programa a partir de "Estado (1er reclamo)" y "Reclamo"."""
+    e, r = normalizar(estado1), normalizar(reclamo)
+    if "cobertura" in e and ("no" in e.split() or "sin" in e.split()):
+        return "sin_cobertura"
+    if "cobertura" in e:
+        return "cobertura"
+    if "pendiente" in e:
+        return "reclamado"
+    if r in ("si", "sí"):
+        return "reclamado"
+    return "sin_reclamo"
+
+
+@dataclass
+class Importacion:
+    nuevas: list = field(default_factory=list)       # devoluciones listas para guardar
+    omitidas: list = field(default_factory=list)     # (fila, número, motivo)
+    ya_estaban: int = 0
+
+
+def importar_de_hoja(hoja: Hoja, existentes: set[str], ventas: dict | None = None,
+                     hoy: dt.date | None = None) -> Importacion:
+    """Filas de la planilla que no están en el programa, como devoluciones (marcadas "importada").
+
+    existentes: Venta # (e ID Carrito) de las devoluciones que ya están en el programa.
+    """
+    from .ventas import carritos as _carritos, prefijos as _prefijos
+    ventas = ventas or {}
+    hoy = hoy or dt.date.today()
+    por_carrito = _carritos(ventas) if ventas else {}
+    por_prefijo = _prefijos(ventas) if ventas else {}
+    imp = Importacion()
+    vistas = set(existentes)
+    for fila0 in range(len(hoja.filas)):
+        celda = hoja.valor(fila0, C_VENTA)
+        numero = venta_de_celda(celda)
+        n_fila = hoja.numero_fila(fila0)
+        if not numero:
+            continue
+        sku = texto_celda(hoja.valor(fila0, C_SKU))
+        venta = numero
+        if numero not in ventas:
+            if isinstance(celda, float) and por_prefijo.get(numero[:15]):
+                venta = por_prefijo[numero[:15]]
+            elif numero in por_carrito:
+                opciones = por_carrito[numero]
+                if len(opciones) > 1:
+                    elegidas = [x for x in opciones if sku and normalizar(ventas[x].codigo) == normalizar(sku)]
+                    if len(elegidas) != 1:
+                        imp.omitidas.append((n_fila, numero, "ID Carrito con varias ventas: corrija el N° Venta"))
+                        continue
+                    opciones = elegidas
+                venta = opciones[0]
+            elif isinstance(celda, float) and len(numero) >= 16 and numero.endswith("0"):
+                imp.omitidas.append((n_fila, numero, "el N° Venta está guardado como número y puede tener mal el "
+                                                     "último dígito: escríbalo como texto"))
+                continue
+        if len(venta) < 10:
+            imp.omitidas.append((n_fila, numero, "no parece un número de venta"))
+            continue
+        if venta in vistas or numero in vistas:
+            if venta in existentes or numero in existentes:
+                imp.ya_estaban += 1
+            continue
+        vistas.add(venta)
+
+        def t(col):
+            return texto_celda(hoja.valor(fila0, col))
+
+        fecha_rev = fecha_de_serial(hoja.valor(fila0, C_FECHA_REV)) or hoy
+        cargado = dt.datetime(fecha_rev.year, fecha_rev.month, fecha_rev.day, 12, tzinfo=dt.timezone.utc)
+        reclamo = normalizar(hoja.valor(fila0, C_RECLAMO))
+        estado = estado_de_fila(hoja.valor(fila0, C_ESTADO1), reclamo)
+        d = {
+            "numero_venta": venta, "importada": True, "estado": estado, "estado_importado": estado,
+            "fotos": 0, "descripcion": "", "cargado_por": "Planilla", "cargado_en": cargado,
+            "actualizado_en": cargado, "planilla_en": fecha_rev.isoformat(),
+            "fecha_vencimiento": fecha_rev.isoformat(),
+        }
+        for campo, col in (("codigo_producto", C_SKU), ("producto", C_ARTICULO), ("deposito_origen", C_DEP_ORIGEN),
+                           ("motivo", C_MOTIVO), ("condicion", C_CONDICION), ("clasificacion", C_CLASIF),
+                           ("deposito_final", C_DEP_FINAL), ("numero_mediacion", C_MEDIACION),
+                           ("numero_movimiento", C_MOVIMIENTO), ("transferencia", C_TRANSF), ("notas", C_NOTAS),
+                           ("reportado", C_REPORTADO), ("pedido", C_PEDIDO)):
+            if t(col):
+                d[campo] = t(col)
+        if reclamo in ("si", "no"):
+            d["reclamo"] = reclamo == "si"
+        if normalizar(hoja.valor(fila0, C_NDC)) == "si":
+            d["nc_realizada"] = True
+        for campo, col in (("monto_reintegrado", C_MONTO), ("costo_envio", C_COSTO_ENVIO),
+                           ("precio_unitario", C_COSTO)):
+            n = numero_celda(hoja.valor(fila0, col))
+            if n is not None:
+                d[campo] = n
+        compra = fecha_de_serial(hoja.valor(fila0, C_FECHA_COMPRA))
+        if compra:
+            d["fecha_venta"] = compra.isoformat()
+        if venta != numero:
+            d["carrito"] = numero
+        info = ventas.get(venta)
+        if info is not None:
+            # Lo que falta sale del informe de ventas
+            for campo, val in (("producto", info.producto), ("codigo_producto", info.codigo),
+                               ("pedido", info.pedido), ("carrito", info.carrito), ("sucursal", info.sucursal),
+                               ("deposito_origen", info.deposito),
+                               ("fecha_venta", info.fecha.isoformat() if info.fecha else "")):
+                if val and not d.get(campo):
+                    d[campo] = val
+        imp.nuevas.append(d)
+    return imp
 
 
 # ---------------------------------------------------------------- emails

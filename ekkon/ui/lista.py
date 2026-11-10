@@ -37,6 +37,10 @@ class VistaLista:
                      ft.dropdown.Option("cobertura", "Esperando cobertura de ML")])
         self.solo_hoy = ft.Checkbox(label="Vencen hoy", value=False, on_change=lambda _: self._pintar())
         self.contador = ft.Text("", color=ft.Colors.ON_SURFACE_VARIANT)
+        # Se cargan las 500 más recientes; con "Mostrar también las antiguas" se cargan todas
+        self.limite = 500
+        self.btn_mas = ft.TextButton("Mostrar también las antiguas", icon=ft.Icons.HISTORY, visible=False,
+                                     on_click=lambda _: self._cargar_todas())
         self.tabla = ft.DataTable(
             columns=[ft.DataColumn(ft.Text(t)) for t in
                      ("Venta", "Vence", "Clasif.", "Reclamo", "%", "Estado", "NC", "Cargó", "Carga")],
@@ -71,23 +75,27 @@ class VistaLista:
         else:
             filtros += [self.filtro_pend]
         filtros += [ft.IconButton(ft.Icons.REFRESH, tooltip="Actualizar", on_click=lambda _: self.recargar()),
-                    self.contador]
+                    self.contador, self.btn_mas]
         if comun.MOVIL:
             segunda = [self.filtro, self.solo_hoy] if self.modo != "pendientes" else [self.filtro_pend]
             return ft.Column([
                 ft.Row([self.buscar, ft.IconButton(ft.Icons.REFRESH, tooltip="Actualizar",
                                                    on_click=lambda _: self.recargar())]),
                 ft.Row(segunda, spacing=8),
-                ft.Row([self.contador]),
+                ft.Row([self.contador, self.btn_mas], wrap=True),
                 self.cargando,
                 self.lista_movil,
             ], spacing=8, expand=True)
         if self.app.es_admin:
             # El botón va arriba a la derecha, junto al título, así no se sale de la pantalla
             from .sincronizar import sincronizar
-            encabezado = ft.Row([encabezado,
-                                 ft.FilledTonalButton("Sincronizar planilla", icon=ft.Icons.TABLE_CHART,
-                                                      on_click=lambda _: sincronizar(self.app))],
+            from .importar import importar_devoluciones
+            encabezado = ft.Row([encabezado, ft.Row([
+                ft.OutlinedButton("Importar de la planilla", icon=ft.Icons.DOWNLOAD,
+                                  tooltip="Trae al programa las devoluciones que están solo en la planilla",
+                                  on_click=lambda _: importar_devoluciones(self.app, self.recargar)),
+                ft.FilledTonalButton("Sincronizar planilla", icon=ft.Icons.TABLE_CHART,
+                                     on_click=lambda _: sincronizar(self.app))], spacing=8, wrap=True)],
                                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                                 vertical_alignment=ft.CrossAxisAlignment.START)
         return ft.Column([
@@ -103,12 +111,17 @@ class VistaLista:
         self.cargando.visible = True
         self._actualizar()
         try:
-            self.filas = self.app.devs.recientes(500)
+            self.filas = self.app.devs.recientes(self.limite)
         except FirebaseError as e:
             self.filas = []
             self.app.manejar_error(e)
         self.cargando.visible = False
+        self.btn_mas.visible = len(self.filas) >= self.limite
         self._pintar()
+
+    def _cargar_todas(self) -> None:
+        self.limite = 20000
+        self.recargar()
 
     def _actualizar(self) -> None:
         try:
