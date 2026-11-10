@@ -10,6 +10,7 @@ dependencies = [
     "flet==0.28.3",
     "requests>=2.32",
     "pillow",
+    "flet-camara",
 ]
 
 [tool.flet]
@@ -20,8 +21,12 @@ copyright = "Ekkon"
 
 [tool.flet.app]
 path = "."
-exclude = ["tests", ".github", "android", "build", "dist", "README.md", "firestore.rules", "requirements.txt",
+exclude = ["tests", ".github", "android", "extensiones", "build", "dist", "README.md", "firestore.rules", "requirements.txt",
            "pyproject.toml", ".gitignore"]
+
+# Extensión propia para la cámara (se instala desde la carpeta del repositorio)
+[tool.flet.dev_packages]
+flet-camara = "extensiones/flet_camara"
 
 [tool.flet.android]
 adaptive_icon_background = "#1F4E8C"

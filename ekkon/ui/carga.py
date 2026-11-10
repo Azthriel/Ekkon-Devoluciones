@@ -88,6 +88,10 @@ class VistaCarga:
         self.btn_fotos = ft.OutlinedButton("Agregar fotos", icon=ft.Icons.ADD_PHOTO_ALTERNATE,
                                            on_click=self._pedir_fotos)
         self.txt_fotos = ft.Text("", size=12, color=ft.Colors.ON_SURFACE_VARIANT)
+        self.btn_camara = ft.FilledTonalButton("Sacar foto", icon=ft.Icons.PHOTO_CAMERA, on_click=self._sacar_foto,
+                                               visible=comun.MOVIL)
+        if comun.MOVIL:
+            self.btn_fotos.text = "Elegir de la galería"
 
         self.mensaje = ft.TextField(label="Mensaje de reclamo", multiline=True, min_lines=4, max_lines=6,
                                     max_length=settings.LIMITE_MENSAJE, expand=True,
@@ -155,7 +159,7 @@ class VistaCarga:
                 seccion("Clasificación, estado y fotos"),
                 fila([self.clasif, self.condicion]),
                 self.descripcion,
-                ft.Row([self.btn_fotos, self.txt_fotos], spacing=12, wrap=True),
+                ft.Row([self.btn_camara, self.btn_fotos, self.txt_fotos], spacing=12, wrap=True, run_spacing=8),
                 self.galeria,
             ], spacing=14)),
             tarjeta(ft.Column([self.full, self.reclamo, self.panel_reclamo], spacing=14)),
@@ -377,6 +381,32 @@ class VistaCarga:
             self.app.avisar(f"{errores} archivo(s) no se pudieron abrir como imagen.", error=True)
         self._refrescar_galeria()
 
+    def _sacar_foto(self, _) -> None:
+        """Abre la cámara del celular y agrega la foto."""
+        if len(self.fotos) >= settings.FOTOS_MAX_POR_DEVOLUCION:
+            self.app.avisar(f"Máximo {settings.FOTOS_MAX_POR_DEVOLUCION} fotos por devolución.", error=True)
+            return
+        camara = getattr(self.app, "camara", None)
+        if camara is None:
+            self.app.avisar("La cámara solo está disponible en el celular. Use \"Elegir de la galería\".",
+                            error=True)
+            return
+        try:
+            ruta = camara.tomar_foto()
+        except Exception as ex:  # noqa: BLE001 - cámara cancelada, sin permiso o tiempo agotado
+            self.app.avisar(f"No se pudo usar la cámara: {ex}", error=True)
+            return
+        if not ruta:
+            return   # la cerró sin sacar la foto
+        try:
+            self.fotos.append(comprimir(ruta))
+        except Exception:  # noqa: BLE001
+            self.app.avisar("No se pudo abrir la foto.", error=True)
+            return
+        self.fotos_cambiaron = True
+        self._refrescar_galeria()
+        self._actualizar_pasos()
+
     def _quitar_foto(self, indice: int) -> None:
         del self.fotos[indice]
         self.fotos_cambiaron = True
@@ -462,7 +492,7 @@ class VistaCarga:
 
     def _ocupado(self, si: bool) -> None:
         self.progreso.visible = si
-        for b in (self.btn_guardar, self.btn_armar, self.btn_fotos):
+        for b in (self.btn_guardar, self.btn_armar, self.btn_fotos, self.btn_camara):
             b.disabled = si
         self.page.update()
 
@@ -591,7 +621,7 @@ class VistaCarga:
                           "Toque \"Armar reclamo\" y después \"Pegar respuesta de Claude\"."))
         if comun.MOVIL:
             pasos[0] = (pasos[0][0], pasos[0][1], f"Copie el número en ML y péguelo ({pegar()}).")
-            pasos[5] = (pasos[5][0], pasos[5][1], "Saque las fotos con la cámara y elíjalas con \"Agregar fotos\".")
+            pasos[5] = (pasos[5][0], pasos[5][1], "Toque \"Sacar foto\" (o elíjalas de la galería).")
         self.fila_pasos.controls = []
         for i, (nombre, ok, _ayuda) in enumerate(pasos, 1):
             color = ft.Colors.GREEN_700 if ok else ft.Colors.OUTLINE

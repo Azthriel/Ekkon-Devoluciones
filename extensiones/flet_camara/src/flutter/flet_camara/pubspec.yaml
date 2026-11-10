@@ -1,0 +1,12 @@
+name: flet_camara
+description: Cámara (image_picker) para Ekkon Devoluciones
+version: 0.1.0
+publish_to: none
+environment:
+  sdk: '>=3.2.3 <4.0.0'
+  flutter: '>=1.17.0'
+dependencies:
+  flutter:
+    sdk: flutter
+  flet: '>=0.25.0 <1.0.0'
+  image_picker: ^1.1.2

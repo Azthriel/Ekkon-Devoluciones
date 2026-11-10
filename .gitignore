@@ -7,3 +7,4 @@ dist/
 service-account*.json
 cuenta_servicio*.json
 *.xlsx
+ekkon/_prueba.py

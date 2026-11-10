@@ -40,6 +40,7 @@ jobs:
 
       - name: Compilar .apk x86_64 (para el emulador)
         run: |
+          echo "PRUEBA = True" > ekkon/_prueba.py
           export FLET_ANDROID_SIGNING_KEY_STORE_PASSWORD="$(cat android/clave.txt)"
           export FLET_ANDROID_SIGNING_KEY_PASSWORD="$FLET_ANDROID_SIGNING_KEY_STORE_PASSWORD"
           flet build apk . --no-rich-output --skip-flutter-doctor --arch x86_64 \
@@ -61,5 +62,5 @@ jobs:
           target: google_apis
           profile: pixel_6
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back emulated
           script: bash .github/scripts/prueba_android.sh

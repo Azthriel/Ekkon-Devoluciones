@@ -79,7 +79,16 @@ class App:
             p.window.min_width = 900
             p.window.min_height = 560
         p.overlay.append(self.selector_fotos)
+        # Cámara del celular (extensión propia, solo existe en el .apk)
+        self.camara = None
+        if p.platform == ft.PagePlatform.ANDROID:
+            from ..camara import Camara
+            self.camara = Camara()
+            p.overlay.append(self.camara)
         self._fallas = self._diagnostico() if comun.MOVIL else []
+        if self.camara is not None and self._es_prueba():
+            self._pantalla_prueba_camara()
+            return
 
         if not settings.FIREBASE_API_KEY:
             self._pantalla_mensaje("Falta configurar Firebase",
@@ -97,6 +106,36 @@ class App:
             except FirebaseError:
                 local.borrar_sesion()
         self.mostrar_login()
+
+    @staticmethod
+    def _es_prueba() -> bool:
+        """Solo en el .apk que se compila para la prueba automática en el emulador (nunca en el que se instala)."""
+        try:
+            from .. import _prueba  # noqa: F401  (el archivo lo crea la prueba antes de compilar)
+            return True
+        except ImportError:
+            return False
+
+    def _pantalla_prueba_camara(self) -> None:
+        resultado = ft.Text("CAMARA SIN PROBAR", size=22)
+
+        def probar(_):
+            try:
+                ruta = self.camara.tomar_foto(espera=120)
+                if ruta:
+                    from ..fotos import comprimir
+                    resultado.value = f"FOTO OK {len(comprimir(ruta))} bytes"
+                else:
+                    resultado.value = "FOTO CANCELADA"
+            except Exception as e:  # noqa: BLE001
+                resultado.value = f"FOTO ERROR {e}"
+            self.page.update()
+
+        self._set(ft.Column([
+            ft.Container(ft.Text("PROBAR CAMARA", size=30), bgcolor=ft.Colors.PRIMARY_CONTAINER, on_click=probar,
+                         alignment=ft.alignment.center, expand=True),
+            ft.Container(resultado, height=200, alignment=ft.alignment.center),
+        ], expand=True))
 
     @staticmethod
     def _diagnostico() -> list[str]:

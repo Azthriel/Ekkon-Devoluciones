@@ -1,0 +1,15 @@
+# Extensión de Flet para sacar fotos con la cámara del celular (paquete Flutter image_picker).
+# Solo se usa en la compilación del .apk ("flet build apk"); el .exe no la necesita.
+[project]
+name = "flet-camara"
+version = "0.1.0"
+description = "Cámara para Ekkon Devoluciones (Flet 0.28)"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.setuptools.package-data]
+"flutter.flet_camara" = ["**/*"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"

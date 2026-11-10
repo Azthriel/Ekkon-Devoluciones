@@ -1,0 +1,10 @@
+pyproject.toml
+src/flet_camara/__init__.py
+src/flet_camara.egg-info/PKG-INFO
+src/flet_camara.egg-info/SOURCES.txt
+src/flet_camara.egg-info/dependency_links.txt
+src/flet_camara.egg-info/top_level.txt
+src/flutter/flet_camara/pubspec.yaml
+src/flutter/flet_camara/lib/flet_camara.dart
+src/flutter/flet_camara/lib/src/camara.dart
+src/flutter/flet_camara/lib/src/create_control.dart

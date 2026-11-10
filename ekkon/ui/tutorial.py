@@ -96,8 +96,7 @@ TEXTOS_MOVIL = {
         "Copie el número en ML (mantenga presionado y toque Copiar) y péguelo acá (mantenga presionado y toque "
         "Pegar). No lo escriba a mano.",
     "Toque \"Agregar fotos\" y elija las fotos del producto (de 1 a 8).":
-        "Saque las fotos con la cámara del celular. Después toque \"Agregar fotos\" y elíjalas de la galería "
-        "(de 1 a 8).",
+        "Toque \"Sacar foto\" para sacarlas con la cámara (de 1 a 8), o \"Elegir de la galería\" si ya las tiene.",
     "Toque \"Armar reclamo\". Se abren Claude y una carpeta con las fotos.":
         "Toque \"Armar reclamo\". Se copian los datos, las fotos quedan en la galería (carpeta Ekkon) y se abre Claude.",
     "En Claude: pegue con Ctrl+V, arrastre las fotos desde la carpeta y envíe.":
