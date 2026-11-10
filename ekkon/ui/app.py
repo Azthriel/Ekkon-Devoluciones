@@ -79,8 +79,7 @@ class App:
             p.window.min_width = 900
             p.window.min_height = 560
         p.overlay.append(self.selector_fotos)
-        if comun.MOVIL:
-            self._diagnostico()
+        self._fallas = self._diagnostico() if comun.MOVIL else []
 
         if not settings.FIREBASE_API_KEY:
             self._pantalla_mensaje("Falta configurar Firebase",
@@ -100,16 +99,19 @@ class App:
         self.mostrar_login()
 
     @staticmethod
-    def _diagnostico() -> None:
-        """Deja en el registro del celular si cargaron las librerías (sirve para la prueba en el emulador)."""
-        partes = []
+    def _diagnostico() -> list[str]:
+        """Librerías que no cargaron en el celular (se muestran en la pantalla de inicio de sesión)."""
+        fallas = []
         for mod in ("PIL.Image", "requests", "certifi"):
             try:
                 __import__(mod)
-                partes.append(f"{mod}=ok")
             except Exception as e:  # noqa: BLE001
-                partes.append(f"{mod}=ERROR {e}")
-        print("EKKON diagnóstico: " + ", ".join(partes) + f", datos={local.carpeta_datos()}", flush=True)
+                fallas.append(f"{mod}: {e}")
+        try:
+            local.carpeta_datos()
+        except OSError as e:
+            fallas.append(f"carpeta de datos: {e}")
+        return fallas
 
     def entrar(self, sesion: Sesion, recordar: bool) -> None:
         self.sesion = sesion
@@ -334,6 +336,8 @@ class App:
                              prefix_icon=ft.Icons.LOCK_OUTLINE)
         recordar = ft.Checkbox(label="Mantener la sesión iniciada en este " + ("celular" if comun.MOVIL else "equipo"),
                                value=True)
+        if not mensaje and getattr(self, "_fallas", None):
+            mensaje = "Error de instalación: " + "; ".join(self._fallas)
         error = ft.Text(mensaje or "", color=ft.Colors.ERROR, visible=bool(mensaje))
         boton = ft.FilledButton("Ingresar", icon=ft.Icons.LOGIN, height=46, expand=True)
         progreso = ft.ProgressBar(visible=False)
