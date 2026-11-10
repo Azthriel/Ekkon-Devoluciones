@@ -1,0 +1,84 @@
+name: Compilar .apk
+
+on:
+  push:
+    branches: [main, proximo]
+    paths-ignore: ["**.md"]
+    tags: ["v*"]
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Instalar Flet
+        run: |
+          python -m pip install --upgrade pip
+          pip install "flet[all]==0.28.3" -r requirements.txt pytest
+
+      - name: Pruebas
+        run: python -m pytest -q tests
+
+      - name: Leer versión
+        id: ver
+        run: |
+          V=$(python -c 'from ekkon.version import VERSION; print(VERSION)')
+          N=$(python -c "a,b,c=('$V'.split('.')+['0','0'])[:3]; print(int(a)*10000+int(b)*100+int(c))")
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "numero=$N" >> "$GITHUB_OUTPUT"
+
+      - name: Cache de Flutter y Android SDK
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/flutter
+            ~/Android
+            ~/.pub-cache
+            ~/.gradle/caches
+          key: flet-0.28.3-android-${{ runner.os }}-v1
+
+      - name: Compilar .apk
+        run: |
+          export FLET_ANDROID_SIGNING_KEY_STORE_PASSWORD="$(cat android/clave.txt)"
+          export FLET_ANDROID_SIGNING_KEY_PASSWORD="$FLET_ANDROID_SIGNING_KEY_STORE_PASSWORD"
+          flet build apk . --no-rich-output --skip-flutter-doctor -v \
+            --arch arm64-v8a armeabi-v7a \
+            --android-signing-key-store "$GITHUB_WORKSPACE/android/ekkon.jks" --android-signing-key-alias ekkon \
+            --project ekkondevoluciones --product "Ekkon Devoluciones" --org com.ekkon \
+            --build-version ${{ steps.ver.outputs.version }} --build-number ${{ steps.ver.outputs.numero }}
+          ls -la build/apk
+          cp build/apk/*.apk EkkonDevoluciones.apk
+
+      - name: Subir artefacto
+        uses: actions/upload-artifact@v5
+        with:
+          name: EkkonDevoluciones-${{ steps.ver.outputs.version }}-apk
+          path: EkkonDevoluciones.apk
+
+      - name: Publicar en el release
+        if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.release.tag_name || github.ref_name }}
+          files: EkkonDevoluciones.apk
