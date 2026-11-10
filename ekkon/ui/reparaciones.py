@@ -130,6 +130,8 @@ class VistaReparaciones:
         numero = ft.TextField(label="N° de OS o Venta #", value=r.get("numero", ""), autofocus=nueva,
                               read_only=not nueva, width=260, prefix_icon=ft.Icons.TAG)
         info = ft.Text("", size=13, selectable=True)
+        opciones_carrito = ft.Row(wrap=True, spacing=6, visible=False)
+        carrito = {"id": r.get("carrito", "")}   # ID Carrito original, si se cargó el carrito en vez del Venta #
         producto = ft.TextField(label="Producto", value=r.get("producto", ""), expand=True)
         sku = ft.TextField(label="SKU", value=r.get("sku", ""), width=160)
         seleccion = set(r.get("estados") or ([] if not nueva else ["Para revisar"]))
@@ -167,6 +169,7 @@ class VistaReparaciones:
         def buscar(_=None):
             k = R.clave(numero.value)
             info.value, info.color = "", None
+            opciones_carrito.visible = False
             if not k:
                 self._update()
                 return
@@ -174,6 +177,20 @@ class VistaReparaciones:
             try:
                 if R.es_venta(k):
                     res = self.app.indice.buscar(k)
+                    if res.tipo == "carrito" and not res.venta:
+                        # Carrito con varias ventas: que elija cuál es la que se repara
+                        def elegir(_, venta):
+                            carrito["id"] = k
+                            numero.value = venta
+                            buscar()
+                        opciones_carrito.controls = [
+                            ft.OutlinedButton(f"{o[0]} · {o[1]} {o[2]}"[:70], on_click=lambda e, v=o[0]: elegir(e, v))
+                            for o in res.opciones]
+                        opciones_carrito.visible = True
+                        info.value, info.color = (f"Es un ID Carrito con {len(res.opciones)} ventas. "
+                                                  "Elija cuál es la que se repara:"), ft.Colors.AMBER_800
+                        self._update()
+                        return
                     if res.venta:
                         prod, cod = res.venta.producto, res.venta.codigo
                         dev = self.app.devs.obtener(res.venta.venta)
@@ -181,7 +198,9 @@ class VistaReparaciones:
                                  f"{dev.get('clasificacion', '—')}). Al terminar, se agrega la nota en la planilla."
                                  if dev else "Venta sin devolución cargada en la app.")
                         if res.venta.venta != k:
+                            carrito["id"] = k
                             numero.value = res.venta.venta
+                            extra = f"ID Carrito {k} → Venta # {res.venta.venta}. " + extra
                 else:
                     o = self.app.indice_os.buscar(k)
                     if o:
@@ -216,7 +235,21 @@ class VistaReparaciones:
                 error.value, error.visible = "Ingrese el N° de OS o el Venta #.", True
                 self._update()
                 return
-            if nueva:
+            if R.es_venta(k):
+                # Si quedó un ID Carrito, se guarda con el Venta #
+                try:
+                    res = self.app.indice.buscar(k)
+                except FirebaseError:
+                    res = None
+                if res and res.tipo == "carrito":
+                    if not res.venta:
+                        error.value, error.visible = "Es un ID Carrito con varias ventas: elija cuál se repara.", True
+                        buscar()
+                        return
+                    carrito["id"], k = k, res.venta.venta
+                    numero.value = k
+            cambia_id = not nueva and R.doc_id(k) != r.get("_id")
+            if nueva or cambia_id:
                 try:
                     if self.app.reparaciones.obtener(k):
                         error.value, error.visible = "Esa OS / venta ya tiene una reparación cargada.", True
@@ -235,9 +268,14 @@ class VistaReparaciones:
                 "estado_final": final.value or "", "notas": (notas.value or "").strip(),
                 "horas": importe(horas.value) if (horas.value or "").strip() else None,
             })
+            if carrito["id"] and carrito["id"] != k:
+                datos["carrito"] = carrito["id"]
             datos = R.completar_fechas(datos)
             try:
-                self.app.reparaciones.guardar(datos, self.app.usuario, nueva)
+                self.app.reparaciones.guardar(datos, self.app.usuario, nueva or cambia_id)
+                if cambia_id and r.get("_id"):
+                    # Estaba guardada con el ID Carrito: se pasa al Venta #
+                    self.app.reparaciones.fs.borrar(f"{R.COL}/{r['_id']}")
             except FirebaseError as e:
                 self.app.manejar_error(e)
                 return
@@ -250,7 +288,7 @@ class VistaReparaciones:
                          size=12, color=ft.Colors.ON_SURFACE_VARIANT)
         dlg.content = ft.Container(ft.Column([
             ft.Row([numero, ft.OutlinedButton("Buscar producto", icon=ft.Icons.SEARCH, on_click=buscar)]),
-            info,
+            info, opciones_carrito,
             ft.Row([producto, sku], spacing=12),
             seccion("Estado actual (puede elegir varios)"), chips,
             ft.Row([causa, reparado, repuesto], spacing=12, wrap=True),
@@ -283,6 +321,12 @@ class VistaReparaciones:
 
     # ------------------------------------------------------------ planilla
 
+    def _ventas(self) -> dict:
+        try:
+            return self.app.indice.todas()
+        except FirebaseError:
+            return {}
+
     def _leer_planilla(self):
         planilla = abrir_planilla_rep(self.app)
         return planilla, planilla.leer(R.leer_hoja)
@@ -295,11 +339,15 @@ class VistaReparaciones:
         except (SheetsError, ValueError, FirebaseError) as e:
             self.app.avisar(str(e), error=True)
             return
-        nuevas = R.desde_hoja(hoja, existentes, os_idx, lambda n: self.app.indice.buscar(n).venta)
+        ventas = self._ventas()
+        nuevas = R.desde_hoja(hoja, existentes, os_idx, ventas)
+        mapa = R.mapa_carritos(ventas)
+        convertidas = [r for r in nuevas if r.get("carrito")]
+        dudosas = [r["numero"] for r in nuevas if R.es_carrito_sin_resolver(r["numero"], ventas, mapa)]
         if not nuevas:
             self.app.avisar("No hay reparaciones nuevas en la planilla para importar.")
             return
-        sin_producto = [r["numero"] for r in nuevas if not r.get("producto")]
+        sin_producto = [r["numero"] for r in nuevas if not r.get("producto") and r["numero"] not in dudosas]
 
         def hacer():
             for r in nuevas:
@@ -313,6 +361,11 @@ class VistaReparaciones:
             self.recargar()
 
         aviso = f" Sin producto en los informes: {', '.join(sin_producto)}." if sin_producto else ""
+        if convertidas:
+            aviso += (f" {len(convertidas)} tenían el ID Carrito en vez del Venta #: se guardan con el Venta # "
+                      "(la planilla se corrige al sincronizar).")
+        if dudosas:
+            aviso += (f" ID Carrito con varias ventas, corríjalos a mano: {', '.join(dudosas)}.")
         self.app.confirmar("Importar reparaciones",
                            f"Se van a importar {len(nuevas)} reparación(es) de la planilla, completando producto y "
                            f"SKU desde los informes.{aviso}", hacer, "Importar")
@@ -321,30 +374,55 @@ class VistaReparaciones:
         try:
             planilla, hoja = self._leer_planilla()
             reps = self.app.reparaciones.listar()
-            plan = R.planificar(hoja, reps)
         except (SheetsError, ValueError, FirebaseError) as e:
             self.app.avisar(str(e), error=True)
             return
-        if plan.vacio:
+        ventas = self._ventas()
+        mapa = R.mapa_carritos(ventas)
+        # Reparaciones guardadas con un ID Carrito: pasan al Venta # (en la app y en la planilla)
+        movidas: list[tuple[str, dict]] = []   # (id viejo, reparación con el Venta #)
+        ids = {r["_id"] for r in reps}
+        for r in reps:
+            nueva = dict(r)
+            if R.convertir_carrito(nueva, ventas, mapa) and R.doc_id(nueva["numero"]) not in ids:
+                movidas.append((r["_id"], nueva))
+                r.update(numero=nueva["numero"], carrito=nueva["carrito"])
+        plan = R.planificar(hoja, reps, ventas)
+        if plan.vacio and not movidas:
             self.app.avisar("La planilla de reparaciones ya está al día.")
             return
         extra = (" No encontré estas columnas: " + ", ".join(sorted(plan.sin_columna)) + ".") if plan.sin_columna else ""
+        if plan.carritos or movidas:
+            extra += (f" {max(len(plan.carritos), len(movidas))} tenían el ID Carrito en vez del Venta #: "
+                      "se reemplaza por el Venta #.")
+        dudosas = sorted({r["numero"] for r in reps if R.es_carrito_sin_resolver(r["numero"], ventas, mapa)})
+        if dudosas:
+            extra += f" ID Carrito con varias ventas, corríjalos a mano: {', '.join(dudosas)}."
 
         def hacer():
             try:
-                planilla.aplicar(plan, hoja)
+                if not plan.vacio:
+                    planilla.aplicar(plan, hoja)
             except SheetsError as e:
                 self.app.avisar(str(e), error=True)
                 return
+            for viejo, nueva in movidas:
+                try:
+                    self.app.reparaciones.guardar(nueva, self.app.usuario, True)
+                    self.app.reparaciones.fs.borrar(f"{R.COL}/{viejo}")
+                except FirebaseError:
+                    pass
             hoy = dt.date.today().isoformat()
+            movidos = {viejo for viejo, _n in movidas}
             for r in reps:
-                if not r.get("planilla_en"):
+                if not r.get("planilla_en") and r["_id"] not in movidos:
                     try:
                         self.app.reparaciones.guardar({**r, "planilla_en": hoy}, self.app.usuario, False)
                     except FirebaseError:
                         pass
             self.app.avisar(f"Planilla de reparaciones actualizada: {len(plan.filas_nuevas)} fila(s) nueva(s) y "
                             f"{len(plan.celdas)} celda(s) actualizada(s).")
+            self.recargar()
 
         self.app.confirmar("Sincronizar planilla de reparaciones",
                            f"Se agregan {len(plan.filas_nuevas)} fila(s) y se actualizan {len(plan.celdas)} celda(s) "

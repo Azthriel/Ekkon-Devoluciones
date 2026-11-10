@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+from collections import defaultdict
 
 from . import settings
 from .os_idx import clave_os
@@ -68,6 +69,65 @@ def coincide(a: str, b: str) -> bool:
         return True
     # Venta guardada como número en la planilla: pierde el último dígito
     return len(a) == len(b) == 16 and a[:15] == b[:15] and a.endswith("0")
+
+
+# ---------------------------------------------------------------- ID Carrito -> Venta #
+
+def mapa_carritos(ventas: dict) -> dict[str, list]:
+    """{ID Carrito: [Venta, ...]} a partir del informe de ventas."""
+    salida: dict[str, list] = defaultdict(list)
+    for v in (ventas or {}).values():
+        if v.carrito:
+            salida[v.carrito].append(v)
+    return salida
+
+
+def _ventas_del_carrito(carrito: str, mapa: dict) -> list:
+    if carrito in mapa:
+        return mapa[carrito]
+    # Número guardado como número en la planilla: puede haber perdido el último dígito
+    if len(carrito) == 16 and carrito.endswith("0"):
+        candidatos = [c for c in mapa if c[:15] == carrito[:15]]
+        if len(candidatos) == 1:
+            return mapa[candidatos[0]]
+    return []
+
+
+def venta_de_carrito(carrito: str, ventas: dict, mapa: dict, sku: str = "", producto: str = ""):
+    """Venta # que corresponde a un ID Carrito. None si no es un carrito o si no se puede decidir.
+
+    Si el carrito tiene varias ventas, elige por SKU (o por producto) la que coincide con la reparación.
+    """
+    if not carrito or carrito in ventas:
+        return None
+    vs = _ventas_del_carrito(carrito, mapa)
+    if len(vs) == 1:
+        return vs[0]
+    sku_n, prod_n = normalizar(sku), normalizar(producto)
+    elegidas = ([v for v in vs if sku_n and normalizar(v.codigo) == sku_n]
+                or [v for v in vs if prod_n and normalizar(v.producto) == prod_n]
+                or [v for v in vs if sku_n and prod_n.startswith(normalizar(v.codigo))])
+    return elegidas[0] if len(elegidas) == 1 else None
+
+
+def es_carrito_sin_resolver(numero: str, ventas: dict, mapa: dict) -> bool:
+    """Es un ID Carrito con varias ventas y no se pudo elegir cuál."""
+    k = clave(numero)
+    return es_venta(k) and k not in ventas and len(_ventas_del_carrito(k, mapa)) > 1
+
+
+def convertir_carrito(r: dict, ventas: dict, mapa: dict | None = None) -> bool:
+    """Si la reparación tiene un ID Carrito como número, lo cambia por el Venta # (guarda el carrito aparte)."""
+    mapa = mapa if mapa is not None else mapa_carritos(ventas)
+    k = clave(r.get("numero"))
+    if not es_venta(k):
+        return False
+    v = venta_de_carrito(k, ventas, mapa, r.get("sku") or "", r.get("producto") or "")
+    if not v:
+        return False
+    r["carrito"] = k
+    r["numero"] = v.venta
+    return True
 
 
 def leer_hoja(filas: list[list]) -> Hoja:
@@ -161,7 +221,19 @@ def _iguales(actual, nuevo, campo: str) -> bool:
     return normalizar(actual) == normalizar(nuevo)
 
 
-def planificar(hoja: Hoja, reparaciones: list[dict]) -> Plan:
+def planificar(hoja: Hoja, reparaciones: list[dict], ventas: dict | None = None) -> Plan:
+    """ventas: informe de ventas, para reconocer filas con el ID Carrito en "N° Venta/OS" (se corrigen)."""
+    ventas = ventas or {}
+    mapa = mapa_carritos(ventas)
+    # Filas de la planilla con un ID Carrito: a qué Venta # corresponden
+    fila_de_venta: dict[str, int] = {}
+    for i in range(len(hoja.filas)):
+        kk = hoja.clave_de(i)
+        if es_venta(kk) and kk not in ventas:
+            v = venta_de_carrito(kk, ventas, mapa, str(hoja.valor(i, R_SKU) or ""),
+                                 str(hoja.valor(i, R_PRODUCTO) or ""))
+            if v:
+                fila_de_venta.setdefault(v.venta, i)
     plan = Plan()
     ultima = hoja.ultima_con_venta()
     plan.fila_modelo = hoja.numero_fila(ultima) if ultima >= 0 else None
@@ -172,6 +244,12 @@ def planificar(hoja: Hoja, reparaciones: list[dict]) -> Plan:
         if not k:
             continue
         fila0 = hoja.buscar(k)
+        por_carrito = False
+        if fila0 is None and es_venta(k):
+            fila0 = fila_de_venta.get(k)
+            if fila0 is None and r.get("carrito"):
+                fila0 = hoja.buscar(clave(r["carrito"]))
+            por_carrito = fila0 is not None
         valores = {col: _celda(campo, r.get(campo)) for campo, col in CAMPOS}
         if fila0 is None:
             nueva = [None] * ancho
@@ -185,6 +263,13 @@ def planificar(hoja: Hoja, reparaciones: list[dict]) -> Plan:
             siguiente += 1
             continue
         numero = hoja.numero_fila(fila0)
+        if por_carrito:
+            # En la planilla está el ID Carrito: se reemplaza por el Venta #
+            i = hoja.indice(R_NUMERO)
+            a1 = f"{letra_columna(i)}{numero}"
+            plan.celdas.append((a1, valores[R_NUMERO]))
+            plan.carritos.append((a1, str(hoja.valor(fila0, R_NUMERO) or "").lstrip("'"), [k]))
+            plan.actualizadas.add(k)
         for campo, col in CAMPOS:
             val = valores[col]
             i = hoja.indice(col)
@@ -199,12 +284,17 @@ def planificar(hoja: Hoja, reparaciones: list[dict]) -> Plan:
     return plan
 
 
-def desde_hoja(hoja: Hoja, existentes: set[str], os_idx: dict, buscar_venta) -> list[dict]:
-    """Filas de la planilla que todavía no están en la app, listas para guardar (con producto y SKU)."""
+def desde_hoja(hoja: Hoja, existentes: set[str], os_idx: dict, ventas: dict) -> list[dict]:
+    """Filas de la planilla que todavía no están en la app, listas para guardar (con producto y SKU).
+
+    Si en "N° Venta/OS" hay un ID Carrito, se guarda con el Venta # (la planilla se corrige al sincronizar).
+    """
     salida = []
+    mapa = mapa_carritos(ventas)
+    vistas = set(existentes)
     for i in range(len(hoja.filas)):
         k = hoja.clave_de(i)
-        if not k or doc_id(k) in existentes:
+        if not k:
             continue
         crudo = str(hoja.valor(i, R_NUMERO) or "").strip()
         r: dict = {"numero": k if es_venta(k) else crudo.lstrip("'").strip() or k}
@@ -227,19 +317,20 @@ def desde_hoja(hoja: Hoja, existentes: set[str], os_idx: dict, buscar_venta) -> 
                     pass
             else:
                 r[campo] = str(v).strip()
-        completar_producto(r, os_idx, buscar_venta)
+        convertir_carrito(r, ventas, mapa)
+        if doc_id(r["numero"]) in vistas:
+            continue
+        vistas.add(doc_id(r["numero"]))
+        completar_producto(r, os_idx, ventas)
         salida.append(r)
     return salida
 
 
-def completar_producto(r: dict, os_idx: dict, buscar_venta) -> dict:
-    """Completa producto y SKU desde el informe de OS o el de ventas (si faltan).
-
-    buscar_venta(numero) -> ventas.Venta | None (acepta Venta # o ID Carrito).
-    """
+def completar_producto(r: dict, os_idx: dict, ventas: dict) -> dict:
+    """Completa producto y SKU desde el informe de OS o el de ventas (si faltan)."""
     k = clave(r.get("numero"))
     info_os = os_idx.get(k) if not es_venta(k) else None
-    venta = buscar_venta(k) if es_venta(k) and buscar_venta else None
+    venta = (ventas or {}).get(k) if es_venta(k) else None
     producto, sku = "", ""
     if info_os:
         producto, sku = info_os.get("producto", ""), info_os.get("sku", "")

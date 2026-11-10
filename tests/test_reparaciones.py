@@ -46,7 +46,7 @@ def test_importar_desde_la_planilla():
                      frep(**{"N° Venta/OS": "538 ", "Producto": "FEE-0011 KOMMBERG CEPILLADORA",
                              "Estado actual": "Para revisar"}),
                      frep(**{"N° Venta/OS": "-"})])
-    reps = R.desde_hoja(h, set(), O.leer_csv(OS_CSV), lambda n: None)
+    reps = R.desde_hoja(h, set(), O.leer_csv(OS_CSV), {})
     assert [r["numero"] for r in reps] == ["463", "538"]
     a, b = reps
     assert a["estados"] == ["Reparada", "Enviado a GP"] and a["fecha_revision"] == "2026-10-28" and a["horas"] == 0.6
@@ -105,3 +105,50 @@ def test_estado_final_gp_solo_agrega_nota():
     cambios = R.cambios_para_devolucion({"clasificacion": "Service"}, r)
     assert "clasificacion" not in cambios and "nota_reparacion" in cambios
     assert R.cambios_para_devolucion({}, {"numero": "1", "estados": ["Para reparar"]}) == {}
+
+
+def _venta(venta, carrito, codigo, producto):
+    from ekkon.ventas import Venta
+    return Venta(venta=venta, carrito=carrito, pedido="", fecha=None, codigo=codigo, producto=producto,
+                 sucursal="", cantidad=1, precio=None)
+
+
+VENTAS = {
+    "2000011111111111": _venta("2000011111111111", "2000015369800002", "FPD-0181", "KOMMBERG MULTIFUNCION"),
+    # Carrito con dos ventas
+    "2000022222222221": _venta("2000022222222221", "2000029999999990", "FEE-0011", "KOMMBERG GARLOPA"),
+    "2000022222222222": _venta("2000022222222222", "2000029999999990", "FDT-0300", "KOMMBERG TALADRO"),
+}
+
+
+def test_id_carrito_en_la_planilla_se_convierte_al_importar_y_se_corrige_al_sincronizar():
+    h = R.leer_hoja([ENC_REP,
+                     frep(**{"N° Venta/OS": "2000015369800002", "Estado actual": "Para revisar"}),
+                     frep(**{"N° Venta/OS": "2000029999999990", "SKU": "FDT-0300", "Estado actual": "Revisada"}),
+                     frep(**{"N° Venta/OS": "2000029999999990 ", "Estado actual": "Revisada"})])
+    reps = R.desde_hoja(h, set(), {}, VENTAS)
+    a, b, c = reps
+    assert a["numero"] == "2000011111111111" and a["carrito"] == "2000015369800002"
+    assert a["producto"] == "KOMMBERG MULTIFUNCION" and a["sku"] == "FPD-0181"
+    assert b["numero"] == "2000022222222222"            # elegida por SKU dentro del carrito
+    assert c["numero"] == "2000029999999990" and "carrito" not in c   # varias ventas y sin SKU: queda a mano
+    mapa = R.mapa_carritos(VENTAS)
+    assert R.es_carrito_sin_resolver(c["numero"], VENTAS, mapa)
+    plan = R.planificar(h, reps, VENTAS)
+    e = dict(plan.celdas)
+    assert e["C2"] == "'2000011111111111" and e["C3"] == "'2000022222222222" and "C4" not in e
+    assert not plan.filas_nuevas
+
+
+def test_reparacion_cargada_con_venta_encuentra_la_fila_con_el_carrito():
+    # En la app se cargó con el Venta #, pero en la planilla alguien escribió el ID Carrito
+    h = R.leer_hoja([ENC_REP, frep(**{"N° Venta/OS": "2000015369800002", "Estado actual": "Para revisar"})])
+    r = {"numero": "2000011111111111", "estados": ["Reparada"]}
+    plan = R.planificar(h, [r], VENTAS)
+    e = dict(plan.celdas)
+    assert e["C2"] == "'2000011111111111" and e["F2"] == "Reparada" and not plan.filas_nuevas
+    # Una reparación guardada con el carrito pasa al Venta #
+    r2 = {"numero": "2000015369800002"}
+    assert R.convertir_carrito(r2, VENTAS) and r2 == {"numero": "2000011111111111", "carrito": "2000015369800002"}
+    assert not R.convertir_carrito({"numero": "463"}, VENTAS)
+    assert not R.convertir_carrito({"numero": "2000011111111111"}, VENTAS)
