@@ -579,7 +579,8 @@ class VistaLista:
         dlg = ft.AlertDialog(
             modal=True,
             title=ft.Text(f"Resultado del reclamo — {d['numero_venta']}"),
-            content=ft.Container(ft.Column([resultado, fila([monto, movimiento]), error], tight=True,
+            content=ft.Container(ft.Column([resultado, fila([monto, movimiento]) if comun.MOVIL else
+                                            ft.Row([monto, movimiento]), error], tight=True,
                                            spacing=14), width=640),
         )
 
