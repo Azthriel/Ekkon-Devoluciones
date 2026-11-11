@@ -85,6 +85,7 @@ ESTADOS = {
     "pendiente": "Pendiente de ML",
     "cobertura": "Con cobertura",
     "sin_cobertura": "Sin cobertura",
+    "reputacion": "Reputación no afectada",
     "cancelacion": "Cancelación",
 }
 

@@ -76,6 +76,9 @@ def sincronizar(app, al_terminar=None) -> None:
             detalle = f"→ Venta # {vs[0]}" if len(vs) == 1 else f"→ carrito con {len(vs)} ventas, corregir a mano"
             lineas.append(ft.Text(f"   {a1}: {carrito} {detalle}", size=12))
         lineas.append(corregir)
+    if plan.resueltas_en_planilla:
+        lineas.append(ft.Text(f"• {len(plan.resueltas_en_planilla)} reclamo(s) que en el programa figuran esperando "
+                              "respuesta ya tienen resultado en la planilla: se actualizan en el programa."))
     if cambios_rep:
         lineas.append(ft.Text(f"• {len(cambios_rep)} devolución(es) con la reparación terminada: se agrega la nota "
                               "y se actualiza la clasificación."))
@@ -108,7 +111,8 @@ def sincronizar(app, al_terminar=None) -> None:
     def aplicar(_):
         page.close(dlg)
         try:
-            planilla.aplicar(plan, hoja)
+            if not plan.vacio:
+                planilla.aplicar(plan, hoja)
             if correcciones and corregir.value:
                 planilla.escribir(correcciones)
         except SheetsError as e:
@@ -118,6 +122,11 @@ def sincronizar(app, al_terminar=None) -> None:
         for doc_id in plan.planilla_en:
             try:
                 app.devs.actualizar(doc_id, {"planilla_en": hoy})
+            except FirebaseError:
+                pass
+        for doc_id, cambios in plan.resueltas_en_planilla:
+            try:
+                app.devs.actualizar(doc_id, cambios)
             except FirebaseError:
                 pass
         for numero, cambios in cambios_rep.items():
@@ -139,7 +148,7 @@ def sincronizar(app, al_terminar=None) -> None:
         if al_terminar:
             al_terminar()
 
-    hay_algo = not plan.vacio or bool(correcciones)
+    hay_algo = not plan.vacio or bool(correcciones) or bool(plan.resueltas_en_planilla)
     acciones: list[ft.Control] = [ft.TextButton("Cancelar" if hay_algo else "Cerrar",
                                                 on_click=lambda _: page.close(dlg))]
     if hay_algo:

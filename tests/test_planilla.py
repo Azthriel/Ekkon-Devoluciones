@@ -359,6 +359,8 @@ def test_importar_carrito_y_estados():
     assert P.estado_de_fila("Cobertura", "si") == "cobertura"
     assert P.estado_de_fila("", "si") == "reclamado"
     assert P.estado_de_fila(None, None) == "sin_reclamo"
+    assert P.estado_de_fila("Reputación no afectada", "si") == "reputacion"
+    assert P.estado_de_fila("Pendiente", "si") == "reclamado"
     from ekkon.ventas import Venta
     ventas = {"2000011111111111": Venta("2000011111111111", "2000015369800002", "PED-1", None, "FPD-0181",
                                         "MULTIFUNCION", "Podesta", 1, 1000.0)}
@@ -402,3 +404,32 @@ def test_full_se_escribe_y_se_importa():
     i = P.importar_de_hoja(h, set(), hoy=HOY).nuevas[0]
     assert i["full"] and i["reclamo"] is False and i["estado"] == "sin_reclamo"
     assert P.planificar(h, [i], hoy=HOY).celdas == []
+
+
+def test_reimportar_corrige_estado_reputacion_no_afectada():
+    h = P.Hoja([ENCABEZADOS, fila(**{"Fecha revisión": P.serial(HOY), "N° Venta": "2000018665749390",
+                                     "Reclamo": "si", "Estado (1er reclamo)": "Reputación no afectada"})])
+    vieja = {"_id": "2000018665749390", "numero_venta": "2000018665749390", "importada": True,
+             "estado": "reclamado", "estado_importado": "reclamado"}
+    imp = P.importar_de_hoja(h, {"2000018665749390"}, hoy=HOY, importadas={"2000018665749390": vieja})
+    assert imp.nuevas == [] and imp.correcciones == [("2000018665749390",
+                                                      {"estado": "reputacion", "estado_importado": "reputacion"})]
+    # Si en el programa ya se cambió el estado, no se toca
+    vieja2 = dict(vieja, estado="cobertura")
+    assert P.importar_de_hoja(h, {"2000018665749390"}, hoy=HOY,
+                              importadas={"2000018665749390": vieja2}).correcciones == []
+    # Con el estado corregido, sincronizar no escribe nada
+    nueva = P.importar_de_hoja(h, set(), hoy=HOY).nuevas[0]
+    assert nueva["estado"] == "reputacion" and P.planificar(h, [nueva], hoy=HOY).celdas == []
+    assert P.valores_de({"numero_venta": "1", "estado": "reputacion"}, HOY)[P.C_ESTADO1] == "Reputación no afectada"
+
+
+def test_resultado_cargado_a_mano_en_la_planilla_pasa_al_programa():
+    h = P.Hoja([ENCABEZADOS, fila(**{"Fecha revisión": P.serial(HOY), "N° Venta": "2000019085519008",
+                                     "Reclamo": "si", "Estado (1er reclamo)": "Reputación no afectada"})])
+    d = {"_id": "2000019085519008", "numero_venta": "2000019085519008", "estado": "reclamado", "reclamo": True,
+         "planilla_en": HOY.isoformat()}
+    plan = P.planificar(h, [d], hoy=HOY)
+    assert plan.resueltas_en_planilla == [("2000019085519008", {"estado": "reputacion"})]
+    assert not any(c[1] == P.C_ESTADO1 for c in plan.conflictos)
+    assert all(not a1.startswith("R") for a1, _v in plan.celdas)

@@ -377,7 +377,7 @@ class VistaLista:
                                       on_click=lambda _: (self.page.set_clipboard(mensaje),
                                                           self.app.avisar("Mensaje copiado.")))]),
             ], spacing=6), padding=14))
-        if d.get("estado") in ("cobertura", "sin_cobertura"):
+        if d.get("estado") in ("cobertura", "sin_cobertura", "reputacion"):
             cuerpo.append(ft.Row([dato("Monto reintegrado", d.get("monto_reintegrado")),
                                   dato("N° de movimiento", d.get("numero_movimiento")),
                                   dato("Resultado registrado", fecha_corta(d.get("resultado_en")))], spacing=30))
@@ -563,6 +563,7 @@ class VistaLista:
         resultado = ft.RadioGroup(content=ft.Row([
             ft.Radio(value="cobertura", label="Hubo cobertura"),
             ft.Radio(value="sin_cobertura", label="No hubo cobertura"),
+            ft.Radio(value="reputacion", label="Reputación no afectada"),
         ], wrap=True), value="cobertura")
         monto = ft.TextField(label="Monto reintegrado", prefix_text="$ ", width=220)
         movimiento = ft.TextField(label="N° de movimiento / ID de Devolución por Compra Protegida",

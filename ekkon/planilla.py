@@ -62,6 +62,7 @@ ESTADO_A_PLANILLA = {
     "pendiente": "Pendiente",
     "cobertura": "Cobertura",
     "sin_cobertura": "NO cobertura",
+    "reputacion": "Reputación no afectada",
 }
 
 EMAIL_ENVIADO = "Email enviado"
@@ -300,6 +301,8 @@ class Plan:
     carritos: list[tuple[str, str, list[str]]] = field(default_factory=list)
     # Devoluciones (id del documento) que se escriben por primera vez: se les guarda la fecha
     planilla_en: list[str] = field(default_factory=list)
+    # Reclamos que en el programa siguen esperando pero en la planilla ya tienen resultado: (id, cambios)
+    resueltas_en_planilla: list[tuple[str, dict]] = field(default_factory=list)
     # La misma venta cargada dos veces en el programa: (venta, doc que se usa, doc repetido)
     duplicadas: list[tuple[str, str, str]] = field(default_factory=list)
     # La misma venta en varias filas de la planilla: (venta, [filas])
@@ -412,6 +415,20 @@ def planificar(hoja: Hoja, devoluciones: list[dict], ventas: dict | None = None,
             siguiente += 1
             continue
         tocadas.add(fila0)
+        en_hoja = normalizar(hoja.valor(fila0, C_ESTADO1))
+        if dev.get("estado") in ("reclamado", "pendiente") and en_hoja and "pendiente" not in en_hoja:
+            # El resultado se cargó a mano en la planilla: pasa al programa (y no es una diferencia)
+            cambios: dict = {"estado": estado_de_fila(hoja.valor(fila0, C_ESTADO1), "si")}
+            monto = numero_celda(hoja.valor(fila0, C_MONTO))
+            if monto is not None:
+                cambios["monto_reintegrado"] = monto
+            mov = texto_celda(hoja.valor(fila0, C_MOVIMIENTO))
+            if mov:
+                cambios["numero_movimiento"] = mov
+            if dev.get("importada"):
+                cambios["estado_importado"] = cambios["estado"]
+            plan.resueltas_en_planilla.append((doc_id, cambios))
+            valores.pop(C_ESTADO1, None)
         # Las importadas de la planilla no se reportan como diferencia: ahí manda la planilla
         _completar_fila(plan, hoja, fila0, valores, venta, reportar=not dev.get("importada"), pisar=pisar)
         _completar_fila(plan, hoja, fila0, informe, venta, reportar=False)
@@ -481,14 +498,22 @@ def numero_celda(v) -> float | None:
 
 
 def estado_de_fila(estado1, reclamo) -> str:
-    """Estado del programa a partir de "Estado (1er reclamo)" y "Reclamo"."""
+    """Estado del programa a partir de "Estado (1er reclamo)" y "Reclamo".
+
+    Solo "Pendiente" (o vacío con reclamo "Si") es un reclamo que espera respuesta; lo demás ya está resuelto.
+    """
     e, r = normalizar(estado1), normalizar(reclamo)
-    if "cobertura" in e and ("no" in e.split() or "sin" in e.split()):
-        return "sin_cobertura"
-    if "cobertura" in e:
-        return "cobertura"
-    if "pendiente" in e:
-        return "reclamado"
+    if e:
+        palabras = e.split()
+        if "pendiente" in e:
+            return "reclamado"
+        if "reputacion" in e:
+            return "reputacion"
+        if "cobertura" in e and ("no" in palabras or "sin" in palabras):
+            return "sin_cobertura"
+        if "cobertura" in e:
+            return "cobertura"
+        return "sin_cobertura"   # otro resultado escrito a mano: ya está resuelto
     if r in ("si", "sí"):
         return "reclamado"
     return "sin_reclamo"
@@ -499,10 +524,11 @@ class Importacion:
     nuevas: list = field(default_factory=list)       # devoluciones listas para guardar
     omitidas: list = field(default_factory=list)     # (fila, número, motivo)
     ya_estaban: int = 0
+    correcciones: list = field(default_factory=list)  # (id, cambios) de importadas cuyo estado cambió en la planilla
 
 
 def importar_de_hoja(hoja: Hoja, existentes: set[str], ventas: dict | None = None,
-                     hoy: dt.date | None = None) -> Importacion:
+                     hoy: dt.date | None = None, importadas: dict | None = None) -> Importacion:
     """Filas de la planilla que no están en el programa, como devoluciones (marcadas "importada").
 
     existentes: Venta # (e ID Carrito) de las devoluciones que ya están en el programa.
@@ -541,6 +567,12 @@ def importar_de_hoja(hoja: Hoja, existentes: set[str], ventas: dict | None = Non
         if len(venta) < 10:
             imp.omitidas.append((n_fila, numero, "no parece un número de venta"))
             continue
+        previa = (importadas or {}).get(venta) or (importadas or {}).get(numero)
+        if previa is not None and previa.get("estado") == previa.get("estado_importado"):
+            # Ya importada y sin cambios en el programa: si en la planilla cambió el estado, se corrige
+            nuevo = estado_de_fila(hoja.valor(fila0, C_ESTADO1), hoja.valor(fila0, C_RECLAMO))
+            if nuevo != previa.get("estado") and previa.get("_id") not in {c[0] for c in imp.correcciones}:
+                imp.correcciones.append((previa.get("_id") or venta, {"estado": nuevo, "estado_importado": nuevo}))
         if venta in vistas or numero in vistas:
             if venta in existentes or numero in existentes:
                 imp.ya_estaban += 1
