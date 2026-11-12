@@ -35,6 +35,8 @@ MENSAJES_ERROR = {
     "CONFIGURATION_NOT_FOUND": "Falta habilitar el acceso con correo y contraseña en Firebase.",
     "OPERATION_NOT_ALLOWED": "Falta habilitar el acceso con correo y contraseña en Firebase.",
     "SIN_CONEXION": "No hay conexión con el servidor. Revise internet.",
+    "RESOURCE_EXHAUSTED": "Se alcanzó el límite diario gratuito de Firebase. Se renueva solo todos los días "
+                          "alrededor de las 5 de la mañana (hora de Argentina).",
 }
 
 

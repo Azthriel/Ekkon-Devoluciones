@@ -81,6 +81,7 @@ def importar_devoluciones(app, al_terminar=None) -> None:
         try:
             if imp.nuevas:
                 app.fs.guardar_varios([(f"{COL_DEV}/{d['numero_venta']}", d) for d in imp.nuevas])
+                app.devs.agregar_a_cache(imp.nuevas)
             for doc_id, cambios in imp.correcciones:
                 app.devs.actualizar(doc_id, cambios)
         except FirebaseError as e:

@@ -2,7 +2,7 @@
 # El .exe de Windows se sigue compilando con "flet pack" y requirements.txt.
 [project]
 name = "ekkondevoluciones"
-version = "0.8.5"
+version = "0.8.6"
 description = "Ekkon Devoluciones"
 requires-python = ">=3.12"
 # Sin google-auth: la sincronización con planillas se hace solo desde la PC del administrador

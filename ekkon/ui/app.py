@@ -152,6 +152,8 @@ class App:
 
     def entrar(self, sesion: Sesion, recordar: bool) -> None:
         self.sesion = sesion
+        # Caché de devoluciones del usuario en este equipo (ahorra lecturas de Firestore)
+        self.devs.usar_cache(local.carpeta_datos() / f"cache_devoluciones_{sesion.uid}.json")
         try:
             perfil = self.usuarios.obtener(sesion.uid)
         except FirebaseError as e:
@@ -255,6 +257,7 @@ class App:
 
     def salir(self, mensaje: str | None = None) -> None:
         local.borrar_sesion()
+        self.devs.usar_cache(None)
         self.sesion = None
         self.usuario = None
         self.mostrar_login(mensaje)

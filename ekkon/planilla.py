@@ -589,7 +589,8 @@ def importar_de_hoja(hoja: Hoja, existentes: set[str], ventas: dict | None = Non
         d = {
             "numero_venta": venta, "importada": True, "estado": estado, "estado_importado": estado,
             "fotos": 0, "descripcion": "", "cargado_por": "Planilla", "cargado_en": cargado,
-            "actualizado_en": cargado, "planilla_en": fecha_rev.isoformat(),
+            # actualizado_en = ahora: así los otros equipos la traen en su próxima actualización
+            "actualizado_en": dt.datetime.now(dt.timezone.utc), "planilla_en": fecha_rev.isoformat(),
             "fecha_vencimiento": fecha_rev.isoformat(),
         }
         for campo, col in (("codigo_producto", C_SKU), ("producto", C_ARTICULO), ("deposito_origen", C_DEP_ORIGEN),
