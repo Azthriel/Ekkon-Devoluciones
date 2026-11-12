@@ -37,9 +37,11 @@ class VistaLista:
                      ft.dropdown.Option("cobertura", "Esperando cobertura de ML")])
         self.solo_hoy = ft.Checkbox(label="Vencen hoy", value=False, on_change=lambda _: self._pintar())
         self.contador = ft.Text("", color=ft.Colors.ON_SURFACE_VARIANT)
-        # Se cargan las 500 más recientes; con "Mostrar también las antiguas" se cargan todas
-        self.limite = 500
-        self.btn_mas = ft.TextButton("Mostrar también las antiguas", icon=ft.Icons.HISTORY, visible=False,
+        # En "Devoluciones" se muestran las últimas 20; "Mostrar todas" muestra el resto (buscar y filtrar
+        # siempre busca en todas). Los datos salen de la caché del equipo, así que no gasta lecturas.
+        self.limite = 20
+        self.mostrar_todas = False
+        self.btn_mas = ft.TextButton("Mostrar todas", icon=ft.Icons.HISTORY, visible=False,
                                      on_click=lambda _: self._cargar_todas())
         self.tabla = ft.DataTable(
             columns=[ft.DataColumn(ft.Text(t)) for t in
@@ -111,17 +113,27 @@ class VistaLista:
         self.cargando.visible = True
         self._actualizar()
         try:
-            self.filas = self.app.devs.recientes(self.limite)
+            self.filas = self.app.devs.todas()
         except FirebaseError as e:
             self.filas = []
             self.app.manejar_error(e)
         self.cargando.visible = False
-        self.btn_mas.visible = len(self.filas) >= self.limite
         self._pintar()
 
     def _cargar_todas(self) -> None:
-        self.limite = 20000
-        self.recargar()
+        self.mostrar_todas = True
+        self._pintar()
+
+    def _recortar(self, filas: list[dict]) -> list[dict]:
+        """Sin búsqueda ni filtros, "Devoluciones" muestra solo las últimas 20 (salvo "Mostrar todas")."""
+        sin_filtro = (not (self.buscar.value or "").strip() and self.filtro.value in (None, "todos")
+                      and not self.solo_hoy.value)
+        recortar = self.modo != "pendientes" and not self.mostrar_todas and sin_filtro and len(filas) > self.limite
+        self.btn_mas.visible = recortar
+        if recortar:
+            self.btn_mas.text = f"Mostrar todas ({len(filas)})"
+            return filas[:self.limite]
+        return filas
 
     def _actualizar(self) -> None:
         try:
@@ -188,7 +200,8 @@ class VistaLista:
 
     def _pintar(self) -> None:
         hoy = hoy_iso()
-        filas = self._visibles()
+        total_visibles = self._visibles()
+        filas = self._recortar(total_visibles)
         if comun.MOVIL:
             self.lista_movil.controls = [self._tarjeta(d, hoy) for d in filas[:300]]
         self.tabla.rows = []
@@ -218,7 +231,8 @@ class VistaLista:
                 ],
                 on_select_changed=lambda _, d=d: self.abrir_detalle(d),
             ))
-        self.contador.value = f"{len(filas)} de {len(self.filas)}"
+        self.contador.value = (f"Últimas {len(filas)} de {len(self.filas)}" if len(filas) < len(total_visibles)
+                               else f"{len(filas)} de {len(self.filas)}")
         if self.modo == "pendientes":
             por_enviar = sum(1 for d in self.filas if d.get("estado") == "reclamo_armado")
             if por_enviar:
