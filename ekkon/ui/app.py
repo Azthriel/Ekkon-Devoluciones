@@ -154,6 +154,7 @@ class App:
         self.sesion = sesion
         # Caché de devoluciones del usuario en este equipo (ahorra lecturas de Firestore)
         self.devs.usar_cache(local.carpeta_datos() / f"cache_devoluciones_{sesion.uid}.json")
+        self.reparaciones.usar_cache(local.carpeta_datos() / f"cache_reparaciones_{sesion.uid}.json")
         try:
             perfil = self.usuarios.obtener(sesion.uid)
         except FirebaseError as e:
@@ -258,6 +259,7 @@ class App:
     def salir(self, mensaje: str | None = None) -> None:
         local.borrar_sesion()
         self.devs.usar_cache(None)
+        self.reparaciones.usar_cache(None)
         self.sesion = None
         self.usuario = None
         self.mostrar_login(mensaje)
@@ -433,9 +435,12 @@ class App:
         from .emails import VistaEmails
         from .cancelaciones import VistaCancelaciones
         from .reparaciones import VistaReparaciones
+        from .verificar import VistaVerificar
 
         reparaciones = ("Reparaciones", ft.Icons.BUILD_OUTLINED, ft.Icons.BUILD,
                         lambda: VistaReparaciones(self).control())
+        verificar = ("Verificar", ft.Icons.FACT_CHECK_OUTLINED, ft.Icons.FACT_CHECK,
+                     lambda: VistaVerificar(self).control())
 
         secciones = [
             ("Cargar", ft.Icons.ADD_A_PHOTO_OUTLINED, ft.Icons.ADD_A_PHOTO, lambda: VistaCarga(self).control()),
@@ -444,10 +449,12 @@ class App:
         ]
         if self.es_service:
             secciones.append(reparaciones)
+        if self.usuario.get("rol") == "carga":
+            secciones.append(verificar)   # Alan prueba lo que reparó el service
         if self.es_admin and comun.MOVIL:
             # En el celular, lo del día a día; planillas, emails, usuarios y ajustes quedan en la PC
             secciones += [("Pendientes", ft.Icons.HOURGLASS_EMPTY, ft.Icons.HOURGLASS_FULL,
-                           lambda: VistaLista(self, modo="pendientes").control()), reparaciones]
+                           lambda: VistaLista(self, modo="pendientes").control()), reparaciones, verificar]
         elif self.es_admin:
             secciones += [
                 ("Pendientes", ft.Icons.HOURGLASS_EMPTY, ft.Icons.HOURGLASS_FULL,
@@ -456,6 +463,7 @@ class App:
                 ("Cancelaciones", ft.Icons.REMOVE_SHOPPING_CART_OUTLINED, ft.Icons.REMOVE_SHOPPING_CART,
                  lambda: VistaCancelaciones(self).control()),
                 reparaciones,
+                verificar,
                 ("Usuarios", ft.Icons.PEOPLE_OUTLINE, ft.Icons.PEOPLE, lambda: VistaUsuarios(self).control()),
                 ("Ajustes", ft.Icons.SETTINGS_OUTLINED, ft.Icons.SETTINGS, lambda: VistaAjustes(self).control()),
             ]

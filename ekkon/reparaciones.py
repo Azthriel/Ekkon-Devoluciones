@@ -11,6 +11,7 @@ from collections import defaultdict
 
 from . import settings
 from .os_idx import clave_os
+from .cache import CacheColeccion
 from .planilla import (Hoja, Plan, fecha_de_serial, letra_columna, modelo, normalizar, para_escribir,
                        vacia)
 
@@ -32,14 +33,18 @@ R_ORIGEN = "¿De donde se obtuvo?"
 R_FINAL = "Estado final"
 R_HORAS = "Horas aproximadas"
 R_NOTAS = "Notas adicionales"
+R_VERIFICADO = "¿Verificado?"          # lo completa Alan al probar el equipo reparado: Funciona / No funciona
+R_NOTAS_VERIF = "Notas verificado"     # por qué no funciona
+VERIFICACIONES = ["Funciona", "No funciona"]
 
 CAMPOS = [  # (campo en la app, columna de la planilla)
     ("fecha_revision", R_FECHA_REV), ("fecha_reparacion", R_FECHA_REP), ("numero", R_NUMERO),
     ("producto", R_PRODUCTO), ("sku", R_SKU), ("estados", R_ESTADO), ("causa", R_CAUSA),
     ("a_realizar", R_A_REALIZAR), ("que_se_hizo", R_HECHO), ("reparado", R_REPARADO),
     ("repuesto", R_REPUESTO), ("origen_repuesto", R_ORIGEN), ("estado_final", R_FINAL),
-    ("horas", R_HORAS), ("notas", R_NOTAS),
+    ("horas", R_HORAS), ("notas", R_NOTAS), ("verificado", R_VERIFICADO), ("notas_verificado", R_NOTAS_VERIF),
 ]
+CAMPOS_VERIFICACION = ("verificado", "notas_verificado", "verificado_por", "verificado_en")
 
 
 # ---------------------------------------------------------------- claves
@@ -273,6 +278,12 @@ def planificar(hoja: Hoja, reparaciones: list[dict], ventas: dict | None = None)
         for campo, col in CAMPOS:
             val = valores[col]
             i = hoja.indice(col)
+            if val is None and campo in ("verificado", "notas_verificado") and r.get(campo) == "" \
+                    and i is not None and not vacia(hoja.valor(fila0, col)):
+                # Reenviada a verificar: se borra el resultado anterior de la planilla
+                plan.celdas.append((f"{letra_columna(i)}{numero}", ""))
+                plan.actualizadas.add(k)
+                continue
             if val is None or campo == "numero":
                 continue
             if i is None:
@@ -352,12 +363,35 @@ def modelo_corto(r: dict) -> str:
 
 # ---------------------------------------------------------------- repositorio
 
+def reparada(r: dict) -> bool:
+    """Marcada como reparada por el service (lista para que Alan la verifique)."""
+    return normalizar(r.get("reparado")) == "si" or "Reparada" in (r.get("estados") or [])
+
+
+def para_verificar(r: dict) -> bool:
+    return reparada(r) and not r.get("verificado")
+
+
 class Reparaciones:
     def __init__(self, fs):
         self.fs = fs
+        self.cache = CacheColeccion(fs, COL)
+
+    def usar_cache(self, archivo) -> None:
+        self.cache.usar_archivo(archivo)
 
     def listar(self) -> list[dict]:
-        return self.fs.listar(COL)
+        return self.cache.todos()
+
+    def verificar(self, numero, resultado: str, notas: str, usuario: dict) -> dict:
+        """Alan prueba el equipo reparado. Solo toca los campos de verificación (las reglas solo le permiten eso)."""
+        ahora = dt.datetime.now(dt.timezone.utc)
+        campos = {"verificado": resultado, "notas_verificado": notas.strip(),
+                  "verificado_por": usuario.get("nombre") or usuario.get("email", ""), "verificado_en": ahora,
+                  "actualizado_en": ahora}
+        doc = self.fs.actualizar(f"{COL}/{doc_id(numero)}", campos)
+        self.cache.poner(doc)
+        return doc
 
     def obtener(self, numero) -> dict | None:
         i = doc_id(numero)
@@ -371,7 +405,10 @@ class Reparaciones:
         if nueva:
             datos.setdefault("creado_en", ahora)
             datos.setdefault("creado_por", usuario.get("email", ""))
-        return self.fs.guardar(f"{COL}/{doc_id(r['numero'])}", datos)
+        doc = self.fs.guardar(f"{COL}/{doc_id(r['numero'])}", datos)
+        self.cache.poner(doc)
+        return doc
 
     def borrar(self, numero) -> None:
         self.fs.borrar(f"{COL}/{doc_id(numero)}")
+        self.cache.poner(None, borrar=doc_id(numero))

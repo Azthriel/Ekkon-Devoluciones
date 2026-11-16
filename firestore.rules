@@ -51,6 +51,9 @@ service cloud.firestore {
     match /reparaciones/{rep} {
       allow read: if activo();
       allow write: if activo() && (perfil().rol == 'admin' || perfil().rol == 'service');
+      // Cualquier usuario activo (Alan) puede verificar una reparación: solo los campos de verificación
+      allow update: if activo() && request.resource.data.diff(resource.data).affectedKeys()
+                      .hasOnly(['verificado', 'notas_verificado', 'verificado_por', 'verificado_en', 'actualizado_en']);
     }
 
     match /devoluciones/{venta} {

@@ -2,12 +2,11 @@
 from __future__ import annotations
 
 import datetime as dt
-import json
 import re
-import threading
 from pathlib import Path
 
 from . import settings
+from .cache import CacheColeccion
 from .firebase import Firestore, FirebaseError
 
 COL_DEV = "devoluciones"
@@ -187,28 +186,6 @@ def leer_respuesta_claude(texto: str) -> tuple[str, int | None]:
 
 # ---------------------------------------------------------------- repositorios
 
-# ---------------------------------------------------------------- caché local de devoluciones
-# Firestore gratis permite 50.000 lecturas por día. En lugar de leer todas las devoluciones cada vez que se abre
-# una lista, se guardan en el equipo y solo se piden las que cambiaron desde la última vez.
-RECARGA_COMPLETA = dt.timedelta(hours=24)   # una vez por día se leen todas (para enterarse de las borradas)
-SOLAPAMIENTO = dt.timedelta(minutes=30)     # margen por diferencias de hora entre equipos
-SIN_CONSULTAR = dt.timedelta(seconds=20)    # si se pidió hace menos, no vuelve a consultar
-
-
-def _a_json(v):
-    if isinstance(v, dt.datetime):
-        return {"__dt__": v.isoformat()}
-    if isinstance(v, bytes):
-        return None   # las fotos no se guardan en la caché
-    raise TypeError(type(v))
-
-
-def _de_json(d: dict):
-    if "__dt__" in d and len(d) == 1:
-        return dt.datetime.fromisoformat(d["__dt__"])
-    return d
-
-
 def _clave_orden(d: dict):
     c = d.get("cargado_en")
     return c if isinstance(c, dt.datetime) else dt.datetime.min.replace(tzinfo=dt.timezone.utc)
@@ -217,80 +194,18 @@ def _clave_orden(d: dict):
 class Devoluciones:
     def __init__(self, fs: Firestore, archivo_cache: Path | None = None):
         self.fs = fs
-        self.archivo_cache = archivo_cache
-        self._lock = threading.RLock()
-        self._docs: dict[str, dict] | None = None
-        self._completa_en: dt.datetime | None = None
-        self._consultado_en: dt.datetime | None = None
+        self.cache = CacheColeccion(fs, COL_DEV, archivo_cache)
 
-    # ------------------------------------------------------------ caché
+    # ------------------------------------------------------------ caché (ver ekkon/cache.py)
     def usar_cache(self, archivo: Path | None) -> None:
-        """Archivo de caché del usuario que inició sesión (se lee al primer uso)."""
-        with self._lock:
-            self.archivo_cache = archivo
-            self._docs = None
-            self._completa_en = self._consultado_en = None
-
-    def _leer_disco(self) -> None:
-        if not self.archivo_cache:
-            return
-        try:
-            datos = json.loads(Path(self.archivo_cache).read_text("utf-8"), object_hook=_de_json)
-            if datos.get("proyecto") != settings.FIREBASE_PROJECT_ID:
-                return
-            self._docs = {d["_id"]: d for d in datos.get("docs", [])}
-            self._completa_en = dt.datetime.fromisoformat(datos["completa_en"])
-        except (OSError, ValueError, KeyError, TypeError):
-            self._docs = None
-
-    def _guardar_disco(self) -> None:
-        if not self.archivo_cache or self._docs is None or self._completa_en is None:
-            return
-        try:
-            datos = {"proyecto": settings.FIREBASE_PROJECT_ID, "completa_en": self._completa_en.isoformat(),
-                     "docs": list(self._docs.values())}
-            tmp = Path(self.archivo_cache).with_suffix(".tmp")
-            tmp.write_text(json.dumps(datos, default=_a_json, ensure_ascii=False), "utf-8")
-            tmp.replace(self.archivo_cache)
-        except (OSError, TypeError, ValueError):
-            pass
-
-    def _ultima_actualizacion(self) -> dt.datetime | None:
-        fechas = [d["actualizado_en"] for d in (self._docs or {}).values()
-                  if isinstance(d.get("actualizado_en"), dt.datetime)]
-        return max(fechas) if fechas else None
+        self.cache.usar_archivo(archivo)
 
     def todas(self, forzar: bool = False) -> list[dict]:
         """Todas las devoluciones (las más nuevas primero), usando la caché del equipo."""
-        with self._lock:
-            ahora = dt.datetime.now(dt.timezone.utc)
-            if self._docs is None and not forzar:
-                self._leer_disco()
-            vieja = self._completa_en is None or ahora - self._completa_en > RECARGA_COMPLETA
-            if forzar or self._docs is None or vieja:
-                self._docs = {d["_id"]: d for d in self.fs.consultar(COL_DEV)}
-                self._completa_en = ahora
-                self._guardar_disco()
-            elif self._consultado_en is None or ahora - self._consultado_en > SIN_CONSULTAR:
-                desde = self._ultima_actualizacion()
-                filtros = [("actualizado_en", "GREATER_THAN", desde - SOLAPAMIENTO)] if desde else []
-                cambiadas = self.fs.consultar(COL_DEV, filtros=filtros)
-                if cambiadas:
-                    for d in cambiadas:
-                        self._docs[d["_id"]] = d
-                    self._guardar_disco()
-            self._consultado_en = ahora
-            return sorted(self._docs.values(), key=_clave_orden, reverse=True)
+        return sorted(self.cache.todos(forzar), key=_clave_orden, reverse=True)
 
     def _en_cache(self, doc: dict | None, borrar: str | None = None) -> None:
-        with self._lock:
-            if self._docs is None:
-                return
-            if borrar:
-                self._docs.pop(borrar, None)
-            if doc and doc.get("_id"):
-                self._docs[doc["_id"]] = doc
-            self._guardar_disco()
+        self.cache.poner(doc, borrar)
 
     def agregar_a_cache(self, docs: list[dict]) -> None:
         """Documentos guardados por otra vía (por ejemplo, importados de la planilla)."""

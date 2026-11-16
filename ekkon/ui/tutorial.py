@@ -113,6 +113,15 @@ def _texto(t: str) -> str:
     return TEXTOS_MOVIL.get(t, t) if comun.MOVIL else t
 
 
+PASOS_VERIFICAR = [
+    (ft.Icons.FACT_CHECK, "Verificar reparaciones",
+     ["En \"Verificar\" aparecen los equipos que el service marcó como reparados.",
+      "Pruebe el equipo, tóquelo en la lista y elija \"Funciona\" o \"No funciona\".",
+      "Si no funciona, escriba por qué: el service lo ve en su lista y lo vuelve a reparar.",
+      "Lo que marque queda en la planilla de Reparaciones (columnas ¿Verificado? y Notas verificado)."]),
+]
+
+
 def _archivo(uid: str):
     return local.carpeta_datos() / f"tutorial_{uid}.json"
 
@@ -133,6 +142,8 @@ def mostrar(app) -> None:
     pasos = list(PASOS_CARGA)
     if app.es_admin or app.es_service:
         pasos += PASOS_SERVICE
+    if app.es_admin or app.usuario.get("rol") == "carga":
+        pasos += PASOS_VERIFICAR
     if app.es_admin:
         pasos += PASOS_ADMIN
     estado = {"i": 0}

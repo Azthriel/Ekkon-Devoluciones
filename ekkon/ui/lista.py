@@ -340,6 +340,21 @@ class VistaLista:
             return ft.Column([ft.Text(etiqueta, size=11, color=ft.Colors.ON_SURFACE_VARIANT),
                               ft.Text(str(valor) if valor not in (None, "") else "—", selectable=True)], spacing=1)
 
+        def copiar(texto: str, que: str):
+            self.app.page.set_clipboard(texto)
+            self.app.avisar(f"{que} {texto} copiado.")
+
+        def dato_copiable(etiqueta: str, valor) -> ft.Control:
+            """Al tocarlo, copia el valor (Venta #, pedido, carrito)."""
+            if valor in (None, ""):
+                return dato(etiqueta, valor)
+            return ft.Container(ft.Column([
+                ft.Text(etiqueta, size=11, color=ft.Colors.ON_SURFACE_VARIANT),
+                ft.Row([ft.Text(str(valor), color=ft.Colors.PRIMARY, weight=ft.FontWeight.W_600),
+                        ft.Icon(ft.Icons.CONTENT_COPY, size=14, color=ft.Colors.PRIMARY)], spacing=4, tight=True)],
+                spacing=1), on_click=lambda _: copiar(str(valor), etiqueta), tooltip="Tocar para copiar",
+                border_radius=6, ink=True)
+
         mensaje = d.get("mensaje_reclamo") or ""
         cuerpo: list[ft.Control] = [
             ft.Row([chip_estado(d.get("estado", "")),
@@ -360,9 +375,9 @@ class VistaLista:
                     dato("Costo de envío", f"$ {d['costo_envio']:,.2f}".replace(",", "X").replace(".", ",")
                          .replace("X", ".") if d.get("costo_envio") is not None else None)],
                    spacing=30, wrap=True),
-            ft.Row([dato("Producto", d.get("producto")), dato("Pedido", d.get("pedido")),
+            ft.Row([dato("Producto", d.get("producto")), dato_copiable("Pedido", d.get("pedido")),
                     dato("Fecha de venta", fecha_corta(d.get("fecha_venta")) if d.get("fecha_venta") else None),
-                    dato("ID Carrito", d.get("carrito"))], spacing=30, wrap=True),
+                    dato_copiable("ID Carrito", d.get("carrito"))], spacing=30, wrap=True),
             *([ft.Row([dato("Tipo", "Cancelación"), dato("Lleva NC", "Sí" if d.get("lleva_nc") else "No"),
                        dato("Remito interno", ("Hecho " + (d.get("remito_numero") or "")).strip()
                             if d.get("remito_hecho") else "Pendiente"),
@@ -398,7 +413,11 @@ class VistaLista:
         cuerpo += [seccion(f"Fotos ({d.get('fotos', 0)})"), galeria]
 
         dlg = ft.AlertDialog(
-            title=ft.Text(f"Venta {d.get('numero_venta')}", size=18 if comun.MOVIL else None),
+            title=ft.Container(
+                ft.Row([ft.Text(f"Venta {d.get('numero_venta')}", size=18 if comun.MOVIL else None),
+                        ft.Icon(ft.Icons.CONTENT_COPY, size=18, color=ft.Colors.PRIMARY)], spacing=8, tight=True),
+                on_click=lambda _: copiar(d.get("numero_venta", ""), "Venta #"), tooltip="Tocar para copiar",
+                border_radius=6, ink=True),
             inset_padding=ft.padding.symmetric(16, 10) if comun.MOVIL else None,
             content=ft.Container(ft.Column(cuerpo, spacing=14, scroll=ft.ScrollMode.AUTO, tight=True),
                                  width=760),

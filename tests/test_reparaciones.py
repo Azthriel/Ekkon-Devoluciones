@@ -152,3 +152,18 @@ def test_reparacion_cargada_con_venta_encuentra_la_fila_con_el_carrito():
     assert R.convertir_carrito(r2, VENTAS) and r2 == {"numero": "2000011111111111", "carrito": "2000015369800002"}
     assert not R.convertir_carrito({"numero": "463"}, VENTAS)
     assert not R.convertir_carrito({"numero": "2000011111111111"}, VENTAS)
+
+
+def test_verificacion_se_escribe_y_al_reenviar_se_borra():
+    enc = ENC_REP + ["¿Verificado?", "Notas verificado"]
+    h = R.leer_hoja([enc, frep(**{"N° Venta/OS": "463", "¿Reparado?": "Si"}) + ["", ""]])
+    r = {"numero": "463", "reparado": "Si", "verificado": "No funciona", "notas_verificado": "No enciende"}
+    assert R.reparada(r) and not R.para_verificar(r)
+    e = dict(R.planificar(h, [r]).celdas)
+    col_v = R.letra_columna(len(ENC_REP))
+    col_n = R.letra_columna(len(ENC_REP) + 1)
+    assert e[f"{col_v}2"] == "No funciona" and e[f"{col_n}2"] == "No enciende"
+    h2 = R.leer_hoja([enc, frep(**{"N° Venta/OS": "463", "¿Reparado?": "Si"}) + ["No funciona", "No enciende"]])
+    r2 = {"numero": "463", "reparado": "Si", "verificado": "", "notas_verificado": ""}
+    e2 = dict(R.planificar(h2, [r2]).celdas)
+    assert e2[f"{col_v}2"] == "" and e2[f"{col_n}2"] == "" and R.para_verificar(r2)

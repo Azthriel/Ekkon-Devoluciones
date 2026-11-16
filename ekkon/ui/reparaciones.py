@@ -11,6 +11,7 @@ from ..datos import importe
 from ..firebase import FirebaseError
 from ..sheets import Planilla, SheetsError, id_de_link
 from . import comun
+from .verificar import chip_verificacion
 from .comun import fecha_corta, seccion, tarjeta, tarjeta_lista, titulo
 
 COLOR_ESTADO_REP = {
@@ -42,13 +43,14 @@ class VistaReparaciones:
                                    width=360, dense=True, on_change=lambda _: self._pintar())
         self.filtro = ft.Dropdown(value="abiertas", width=230, dense=True, on_change=lambda _: self._pintar(),
                                   options=[ft.dropdown.Option("abiertas", "Sin terminar"),
-                                           ft.dropdown.Option("todas", "Todas")] +
+                                           ft.dropdown.Option("todas", "Todas"),
+                                           ft.dropdown.Option("no_funciona", "Verificadas: no funciona")] +
                                   [ft.dropdown.Option(e, e) for e in settings.REP_ESTADOS])
         self.contador = ft.Text("", color=ft.Colors.ON_SURFACE_VARIANT)
         self.tabla = ft.DataTable(
             columns=[ft.DataColumn(ft.Text(t)) for t in
                      ("N° Venta/OS", "Producto", "Estado", "Causa", "Reparado", "Estado final", "Revisión",
-                      "Reparación")],
+                      "Reparación", "Verificación")],
             rows=[], heading_row_height=40, data_row_min_height=44, data_row_max_height=56, column_spacing=20)
         self.lista_movil = ft.ListView(spacing=8, expand=True)
         if comun.MOVIL:
@@ -108,9 +110,12 @@ class VistaReparaciones:
         filtro = self.filtro.value or "abiertas"
         salida = []
         for r in self.filas:
-            if filtro == "abiertas" and R.finalizada(r):
+            if filtro == "abiertas" and R.finalizada(r) and r.get("verificado") != "No funciona":
                 continue
-            if filtro not in ("abiertas", "todas") and filtro not in (r.get("estados") or []):
+            if filtro == "no_funciona":
+                if r.get("verificado") != "No funciona":
+                    continue
+            elif filtro not in ("abiertas", "todas") and filtro not in (r.get("estados") or []):
                 continue
             if texto:
                 pajar = " ".join(str(r.get(k, "")) for k in ("numero", "sku", "producto", "notas")).lower()
@@ -129,6 +134,7 @@ class VistaReparaciones:
             ft.Text(r.get("producto") or "—", size=12, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
             chips_estado(r.get("estados")),
             *([ft.Text("  ·  ".join(abajo), size=12, color=ft.Colors.ON_SURFACE_VARIANT)] if abajo else []),
+            *([chip_verificacion(r)] if R.reparada(r) else []),
         ], spacing=4), lambda r=r: self.editar(r))
 
     def _pintar(self, actualizar: bool = True) -> None:
@@ -146,6 +152,7 @@ class VistaReparaciones:
                 ft.DataCell(ft.Text(r.get("estado_final") or "—")),
                 ft.DataCell(ft.Text(fecha_corta(r.get("fecha_revision")) if r.get("fecha_revision") else "—")),
                 ft.DataCell(ft.Text(fecha_corta(r.get("fecha_reparacion")) if r.get("fecha_reparacion") else "—")),
+                ft.DataCell(chip_verificacion(r)),
             ],
             on_select_changed=lambda _, r=r: self.editar(r)) for r in filas]
         self.contador.value = f"{len(filas)} de {len(self.filas)}"
@@ -195,6 +202,17 @@ class VistaReparaciones:
         notas = ft.TextField(label="Notas adicionales", value=r.get("notas", ""), multiline=True, min_lines=1,
                              max_lines=3)
         error = ft.Text("", color=ft.Colors.ERROR, visible=False)
+        # Si Alan la probó y no funciona: se avisa y, al volver a repararla, se reenvía a verificar
+        reenviar = ft.Checkbox(label="Ya la volví a reparar: enviar de nuevo a verificar", value=False)
+        aviso_verif: list[ft.Control] = []
+        if r.get("verificado") == "No funciona":
+            aviso_verif = [ft.Container(ft.Column([
+                ft.Row([ft.Icon(ft.Icons.REPORT_PROBLEM, color=ft.Colors.RED_700),
+                        ft.Text(f"Verificada: NO FUNCIONA ({r.get('verificado_por', '')}, "
+                                f"{fecha_corta(r.get('verificado_en'))})", weight=ft.FontWeight.W_600,
+                                color=ft.Colors.RED_700, expand=True)]),
+                ft.Text(r.get("notas_verificado") or "", selectable=True), reenviar], spacing=6),
+                padding=12, border_radius=10, bgcolor=ft.Colors.with_opacity(0.08, ft.Colors.RED_700))]
 
         def buscar(_=None):
             k = R.clave(numero.value)
@@ -299,6 +317,13 @@ class VistaReparaciones:
                 "estado_final": final.value or "", "notas": (notas.value or "").strip(),
                 "horas": importe(horas.value) if (horas.value or "").strip() else None,
             })
+            if reenviar.value:
+                # Vuelve a la lista de Alan; lo anterior queda en las notas
+                previo = f"No funcionó ({fecha_corta(r.get('verificado_en'))}): {r.get('notas_verificado', '')}"
+                datos["notas"] = " | ".join(x for x in (datos.get("notas"), previo) if x)
+                for c in R.CAMPOS_VERIFICACION:
+                    datos.pop(c, None)
+                datos["verificado"] = datos["notas_verificado"] = ""   # así también se borra en la planilla
             if carrito["id"] and carrito["id"] != k:
                 datos["carrito"] = carrito["id"]
             datos = R.completar_fechas(datos)
@@ -320,7 +345,7 @@ class VistaReparaciones:
         dlg.content = ft.Container(ft.Column([
             ft.Row([numero, ft.OutlinedButton("Buscar producto", icon=ft.Icons.SEARCH, on_click=buscar)],
                    wrap=True, run_spacing=8),
-            info, opciones_carrito,
+            info, opciones_carrito, *aviso_verif,
             ft.Column([producto, sku], spacing=12) if comun.MOVIL else ft.Row([producto, sku], spacing=12),
             seccion("Estado actual (puede elegir varios)"), chips,
             ft.Row([causa, reparado, repuesto], spacing=12, wrap=True),

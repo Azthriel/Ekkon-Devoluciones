@@ -1,6 +1,6 @@
 import datetime as dt
 
-from ekkon import datos as D
+from ekkon import cache as C, datos as D
 
 
 class FS:
@@ -40,7 +40,7 @@ def test_cache_lee_todo_una_vez_y_despues_solo_lo_que_cambio(tmp_path, monkeypat
     devs.todas()
     assert len(fs.consultas) == 1
     # Otro equipo agrega una: la próxima consulta pide solo las cambiadas desde la última (con margen)
-    monkeypatch.setattr(D, "SIN_CONSULTAR", dt.timedelta(seconds=-1))
+    monkeypatch.setattr(C, "SIN_CONSULTAR", dt.timedelta(seconds=-1))
     fs.docs["9"] = _doc("9", 60)
     assert devs.todas()[0]["_id"] == "9"
     assert fs.consultas[-1][0][0] == "actualizado_en"
