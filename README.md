@@ -25,7 +25,7 @@ Programa de Windows para cargar y gestionar las devoluciones de Mercado Libre.
   Arma la lista SKU | Producto | Cant. para el remito de Canva y el email con los pedidos para Carolina.
 - **Reparaciones (0.6)**: perfil *Service* (carga devoluciones y reparaciones). Se busca el producto por N° de OS (informe
   "OS para APP" importado en *Ajustes*) o por Venta #. La app es la fuente de la planilla de Reparaciones; las reparaciones
-  terminadas de devoluciones agregan una nota y cambian la clasificación (Outlet B→B, Outlet C→C, Scrap/Repuesto→Scrap).
+  terminadas de devoluciones agregan una nota y cambian la clasificación (Nuevo→N, Outlet A→A, Outlet B→B, Outlet C→C, Scrap/Repuesto→Scrap).
 - **Celular Android (0.7)**: `EkkonDevoluciones.apk` (mismo código, compilado con `flet build apk`). Pantallas adaptadas
   (barra de secciones abajo, listas en tarjetas), fotos desde la galería y "Armar reclamo" con la app de Claude.
   Planillas, emails, usuarios y ajustes quedan en la PC. El .apk se firma con `android/ekkon.jks` (siempre la misma

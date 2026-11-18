@@ -167,3 +167,8 @@ def test_verificacion_se_escribe_y_al_reenviar_se_borra():
     r2 = {"numero": "463", "reparado": "Si", "verificado": "", "notas_verificado": ""}
     e2 = dict(R.planificar(h2, [r2]).celdas)
     assert e2[f"{col_v}2"] == "" and e2[f"{col_n}2"] == "" and R.para_verificar(r2)
+
+
+def test_estado_final_nuevo_y_outlet_a():
+    assert R.clasificacion_final({"estado_final": "Nuevo"}) == "N"
+    assert R.clasificacion_final({"estado_final": "Outlet A"}) == "A"

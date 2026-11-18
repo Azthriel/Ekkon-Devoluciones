@@ -116,6 +116,7 @@ REP_ESTADOS = ["Para revisar", "Revisada", "Esperando repuesto", "Esperando coti
                "Para reparar", "Reparada", "Enviado a GP", "Finalizado", "Extraviado"]
 REP_CAUSAS = ["Fallo de maquina", "Mal uso"]
 REP_ORIGEN_REPUESTO = ["Scrap", "Outlet A", "Outlet B", "Outlet C", "Nuevo", "Envío de GP"]
-REP_ESTADO_FINAL = ["Outlet B", "Outlet C", "Scrap", "GP", "Repuesto"]
+REP_ESTADO_FINAL = ["Nuevo", "Outlet A", "Outlet B", "Outlet C", "Scrap", "GP", "Repuesto"]
 # Al terminar la reparación de una devolución, su clasificación pasa a ser esta (GP queda como estaba)
-CLASIF_POR_ESTADO_FINAL = {"Outlet B": "B", "Outlet C": "C", "Scrap": "Scrap", "Repuesto": "Scrap"}
+CLASIF_POR_ESTADO_FINAL = {"Nuevo": "N", "Outlet A": "A", "Outlet B": "B", "Outlet C": "C", "Scrap": "Scrap",
+                           "Repuesto": "Scrap"}
