@@ -120,3 +120,28 @@ REP_ESTADO_FINAL = ["Nuevo", "Outlet A", "Outlet B", "Outlet C", "Scrap", "GP", 
 # Al terminar la reparación de una devolución, su clasificación pasa a ser esta (GP queda como estaba)
 CLASIF_POR_ESTADO_FINAL = {"Nuevo": "N", "Outlet A": "A", "Outlet B": "B", "Outlet C": "C", "Scrap": "Scrap",
                            "Repuesto": "Scrap"}
+
+
+# ---------------------------------------------------------------- costo de envío
+DIAS_AVISO_COSTO_ENVIO = 30   # en Pendientes se avisa si falta el costo de envío en las cargadas hace menos
+
+
+def costo_envio_efectivo(d: dict):
+    """Costo de envío cargado; con motivo "no lo quiere" es siempre 0 aunque no se haya cargado."""
+    if d.get("costo_envio") is not None:
+        return d["costo_envio"]
+    if str(d.get("motivo") or "").strip().lower() == "no lo quiere":
+        return 0.0
+    return None
+
+
+def falta_costo_envio(d: dict, ahora=None) -> bool:
+    """Le falta el costo de envío y es reciente (las viejas ya no vale la pena completarlas)."""
+    import datetime as _dt
+    if costo_envio_efectivo(d) is not None:
+        return False
+    cargado = d.get("cargado_en")
+    if not isinstance(cargado, _dt.datetime):
+        return False
+    ahora = ahora or _dt.datetime.now(_dt.timezone.utc)
+    return (ahora - cargado).days < DIAS_AVISO_COSTO_ENVIO

@@ -210,10 +210,11 @@ def valores_de(dev: dict, hoy: dt.date | None = None) -> dict:
         v[C_DEP_FINAL] = final
     if dev.get("nota_reparacion"):
         v[C_NOTAS] = dev["nota_reparacion"]
-    if dev.get("costo_envio") is not None:
-        v[C_COSTO_ENVIO] = dev["costo_envio"]
-    if dev.get("tipo") == "cancelacion":
-        # En las cancelaciones NdC dice si lleva nota de crédito; la transferencia es por remito interno
+    if settings.costo_envio_efectivo(dev) is not None:
+        v[C_COSTO_ENVIO] = settings.costo_envio_efectivo(dev)   # "no lo quiere": siempre 0
+    if dev.get("tipo") == "cancelacion" or dev.get("sin_factura"):
+        # Cancelaciones y devoluciones sin factura: NdC dice si lleva nota de crédito ("No" si no tiene factura);
+        # la transferencia es por remito interno
         v[C_NDC] = "Si" if dev.get("lleva_nc") else "No"
         if dev.get("transferencia"):
             v[C_TRANSF] = dev["transferencia"]
@@ -631,6 +632,72 @@ def importar_de_hoja(hoja: Hoja, existentes: set[str], ventas: dict | None = Non
                     d[campo] = val
         imp.nuevas.append(d)
     return imp
+
+
+# ---------------------------------------------------------------- corregir el programa con la planilla
+
+CAMPO_DE_COLUMNA = {
+    C_SKU: "codigo_producto", C_ARTICULO: "producto", C_DEP_ORIGEN: "deposito_origen", C_MOTIVO: "motivo",
+    C_CONDICION: "condicion", C_CLASIF: "clasificacion", C_DEP_FINAL: "deposito_final",
+    C_MEDIACION: "numero_mediacion", C_MOVIMIENTO: "numero_movimiento", C_TRANSF: "transferencia",
+    C_REPORTADO: "reportado", C_PEDIDO: "pedido",
+}
+NUMERO_DE_COLUMNA = {C_MONTO: "monto_reintegrado", C_COSTO_ENVIO: "costo_envio", C_COSTO: "precio_unitario"}
+
+
+def campos_desde_celda(columna: str, valor, dev: dict | None = None) -> dict:
+    """Qué cambiar en el programa para que diga lo mismo que la celda de la planilla ({} si no se puede)."""
+    dev = dev or {}
+    if columna in CAMPO_DE_COLUMNA:
+        t = texto_celda(valor)
+        return {CAMPO_DE_COLUMNA[columna]: t} if t else {}
+    if columna in NUMERO_DE_COLUMNA:
+        n = numero_celda(valor)
+        return {NUMERO_DE_COLUMNA[columna]: n} if n is not None else {}
+    if columna == C_RECLAMO:
+        r = normalizar(valor)
+        if r == "full":
+            return {"reclamo": False, "full": True}
+        if r in ("si", "no"):
+            return {"reclamo": r == "si", "full": False}
+        return {}
+    if columna == C_ESTADO1:
+        if vacia(valor):
+            return {}
+        estado = estado_de_fila(valor, "si")
+        return {"estado": estado, **({"estado_importado": estado} if dev.get("importada") else {})}
+    if columna == C_NDC:
+        n = normalizar(valor)
+        if n == "si":
+            return {"nc_realizada": True}
+        if n:
+            return {"lleva_nc": False, "nc_realizada": False}
+        return {}
+    if columna == C_FECHA_REV:
+        f = fecha_de_serial(valor)
+        return {"planilla_en": f.isoformat()} if f else {}
+    if columna == C_FECHA_COMPRA:
+        f = fecha_de_serial(valor)
+        return {"fecha_venta": f.isoformat()} if f else {}
+    return {}
+
+
+def correcciones_desde_conflictos(conflictos: list, devoluciones: list[dict]) -> dict[str, dict]:
+    """{id de la devolución: campos} para que el programa diga lo mismo que la planilla en cada diferencia."""
+    por_venta = {}
+    for d in devoluciones:
+        for k in (d.get("numero_venta"), d.get("carrito")):
+            if k:
+                por_venta.setdefault(k, d)
+    salida: dict[str, dict] = {}
+    for venta, col, actual, _programa in conflictos:
+        d = por_venta.get(str(venta))
+        if d is None:
+            continue
+        campos = campos_desde_celda(col, actual, d)
+        if campos:
+            salida.setdefault(d.get("_id") or d["numero_venta"], {}).update(campos)
+    return salida
 
 
 # ---------------------------------------------------------------- emails

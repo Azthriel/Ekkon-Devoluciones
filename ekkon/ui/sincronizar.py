@@ -7,7 +7,7 @@ import flet as ft
 
 from ..firebase import FirebaseError
 from .. import reparaciones as R
-from ..planilla import planificar
+from ..planilla import correcciones_desde_conflictos, planificar
 from ..sheets import Planilla, SheetsError, id_de_link
 
 
@@ -97,7 +97,8 @@ def sincronizar(app, al_terminar=None) -> None:
                               color=ft.Colors.ERROR))
     if plan.conflictos:
         lineas.append(ft.Text(f"{len(plan.conflictos)} celda(s) tienen un valor distinto al del programa. "
-                              "No se tocan:", weight=ft.FontWeight.W_600))
+                              "En la planilla no se tocan. Con \"Corregir en el programa\" el programa pasa a decir "
+                              "lo mismo que la planilla:", weight=ft.FontWeight.W_600))
         tabla = ft.DataTable(
             columns=[ft.DataColumn(ft.Text(t)) for t in ("Venta", "Columna", "En la planilla", "En el programa")],
             rows=[ft.DataRow([ft.DataCell(ft.Text(str(x), size=12)) for x in c]) for c in plan.conflictos[:100]],
@@ -148,9 +149,29 @@ def sincronizar(app, al_terminar=None) -> None:
         if al_terminar:
             al_terminar()
 
+    a_corregir = correcciones_desde_conflictos(plan.conflictos, devoluciones)
+
+    def corregir_programa(_):
+        """La planilla es la fuente más confiable: el programa toma sus valores en las diferencias."""
+        page.close(dlg)
+        hechas = 0
+        for doc_id, campos in a_corregir.items():
+            try:
+                app.devs.actualizar(doc_id, campos)
+                hechas += 1
+            except FirebaseError as e:
+                app.manejar_error(e)
+                break
+        app.avisar(f"Se corrigieron {hechas} devolución(es) en el programa con los datos de la planilla.")
+        sincronizar(app, al_terminar)   # vuelve a mostrar el resumen, ya sin esas diferencias
+
     hay_algo = not plan.vacio or bool(correcciones) or bool(plan.resueltas_en_planilla)
     acciones: list[ft.Control] = [ft.TextButton("Cancelar" if hay_algo else "Cerrar",
                                                 on_click=lambda _: page.close(dlg))]
+    if a_corregir:
+        acciones.append(ft.OutlinedButton(f"Corregir en el programa ({len(a_corregir)})", icon=ft.Icons.SYNC_ALT,
+                                          tooltip="El programa toma lo que dice la planilla en esas diferencias",
+                                          on_click=corregir_programa))
     if hay_algo:
         acciones.append(ft.FilledButton("Escribir en la planilla", icon=ft.Icons.CLOUD_UPLOAD, on_click=aplicar))
     dlg.actions = acciones

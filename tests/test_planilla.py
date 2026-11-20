@@ -433,3 +433,39 @@ def test_resultado_cargado_a_mano_en_la_planilla_pasa_al_programa():
     assert plan.resueltas_en_planilla == [("2000019085519008", {"estado": "reputacion"})]
     assert not any(c[1] == P.C_ESTADO1 for c in plan.conflictos)
     assert all(not a1.startswith("R") for a1, _v in plan.celdas)
+
+
+def test_sin_factura_escribe_ndc_no_y_espera_remito():
+    from ekkon import settings
+    d = dev("2000014434008281", clasificacion="N", condicion="Buena", reclamo=False, estado="sin_reclamo",
+            sin_factura=True, lleva_nc=False, transferencia=settings.TRANSF_ESPERA_REMITO)
+    v = P.valores_de(d, HOY)
+    assert v[P.C_NDC] == "No" and v[P.C_TRANSF] == settings.TRANSF_ESPERA_REMITO
+    assert not settings.necesita_nc(d)
+    d["transferencia"] = settings.TRANSF_REALIZADA
+    assert P.valores_de(d, HOY)[P.C_TRANSF] == settings.TRANSF_REALIZADA
+
+
+def test_no_lo_quiere_costo_envio_cero_y_aviso_de_faltante():
+    import datetime as dt
+    from ekkon import settings
+    ahora = dt.datetime(2026, 11, 20, 12, tzinfo=dt.timezone.utc)
+    nuevo = {"motivo": "cancelado", "cargado_en": ahora - dt.timedelta(days=3)}
+    viejo = {"motivo": "cancelado", "cargado_en": ahora - dt.timedelta(days=90)}
+    no_quiere = {"motivo": "no lo quiere", "cargado_en": ahora}
+    assert settings.falta_costo_envio(nuevo, ahora) and not settings.falta_costo_envio(viejo, ahora)
+    assert not settings.falta_costo_envio(no_quiere, ahora)
+    assert P.valores_de(dev("2000014434008281", motivo="no lo quiere"), HOY)[P.C_COSTO_ENVIO] == 0.0
+
+
+def test_corregir_el_programa_con_la_planilla():
+    devs = [{"_id": "2000014434008281", "numero_venta": "2000014434008281"}]
+    conflictos = [("2000014434008281", P.C_CLASIF, "B", "C"),
+                  ("2000014434008281", P.C_MONTO, "15.000,50", 1000),
+                  ("2000014434008281", P.C_ESTADO1, "Reputación no afectada", "Pendiente"),
+                  ("2000014434008281", P.C_RECLAMO, "Full", "si"),
+                  ("2000014434008281", P.C_NDC, "No", "Si"),
+                  ("9999", P.C_CLASIF, "B", "C")]
+    c = P.correcciones_desde_conflictos(conflictos, devs)
+    assert c == {"2000014434008281": {"clasificacion": "B", "monto_reintegrado": 15000.5, "estado": "reputacion",
+                                      "reclamo": False, "full": True, "lleva_nc": False, "nc_realizada": False}}

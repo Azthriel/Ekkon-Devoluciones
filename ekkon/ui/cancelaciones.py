@@ -15,6 +15,7 @@ from ..datos import email_cancelaciones, lista_remito, validar_numero_venta
 from ..firebase import FirebaseError
 from ..local import abrir_url
 from .comun import fecha_corta, seccion, tarjeta, titulo
+from .lista import pedir_costo_envio
 
 
 class VistaCancelaciones:
@@ -132,7 +133,12 @@ class VistaCancelaciones:
         except FirebaseError as e:
             self.cancelaciones = []
             self.app.manejar_error(e)
-        pend_remito = [d for d in self.cancelaciones if not d.get("remito_hecho")]
+        # Al remito interno van también las devoluciones sin factura (no llevan NC, se llevan desde Podestá)
+        try:
+            sin_factura = [d for d in self.app.devs.todas() if d.get("sin_factura") and d.get("tipo") != "cancelacion"]
+        except FirebaseError:
+            sin_factura = []
+        pend_remito = [d for d in self.cancelaciones + sin_factura if not d.get("remito_hecho")]
         pend_email = [d for d in self.cancelaciones if not d.get("informado_caro")]
         self.sel_remito = {d["numero_venta"] for d in pend_remito}
         self.sel_email = {d["numero_venta"] for d in pend_email}
@@ -157,7 +163,8 @@ class VistaCancelaciones:
 
     def _pintar_remito(self, pendientes: list[dict]) -> None:
         if not pendientes:
-            self.panel_remito.controls = [ft.Text("No hay cancelaciones pendientes de remito.")]
+            self.panel_remito.controls = [ft.Text("No hay cancelaciones ni devoluciones sin factura pendientes de "
+                                                  "remito.")]
             return
         modelos = self.app.config.get("modelos_por_sku") or {}
         previa = self._vista_previa("")
@@ -201,12 +208,12 @@ class VistaCancelaciones:
                     except FirebaseError as e:
                         self.app.manejar_error(e)
                         return
-                self.app.avisar(f"Remito registrado para {len(sel)} cancelación(es). "
+                self.app.avisar(f"Remito registrado para {len(sel)} venta(s). "
                                 "En la planilla pasan a \"Realizada\" al sincronizar.")
                 self.recargar()
 
-            self.app.confirmar("Remito hecho", f"¿El stock de {len(sel)} cancelación(es) ya llegó a Podestá con el "
-                                               "remito interno firmado?", confirmar, "Sí, marcar")
+            self.app.confirmar("Remito hecho", f"¿El stock de {len(sel)} venta(s) ya se llevó con el remito interno "
+                                               "firmado?", confirmar, "Sí, marcar")
 
         self.panel_remito.controls = [
             ft.Text("Tilde las que van en este remito. La lista tiene el mismo formato que el email de transferencia.",
@@ -310,6 +317,21 @@ class VistaCancelaciones:
                                 else "Pendiente")),
             ft.DataCell(ft.Text("Sí" if d.get("informado_caro") else "No")),
             ft.DataCell(ft.Text(fecha_corta(d.get("cargado_en")))),
+            ft.DataCell(self._celda_envio(d)),
+            ft.DataCell(ft.Row([
+                ft.IconButton(ft.Icons.OPEN_IN_NEW, tooltip="Ver venta en Mercado Libre",
+                              on_click=lambda _, d=d: abrir_url(page=self.app.page, url=settings.link_venta(
+                                  d.get("numero_venta", ""), d.get("carrito", "")))),
+                ft.IconButton(ft.Icons.LOCAL_SHIPPING, tooltip="Cargar costo de envío",
+                              on_click=lambda _, d=d: pedir_costo_envio(self.app, d, al_guardar=self.recargar)),
+            ], spacing=0, tight=True)),
         ]) for d in self.cancelaciones[:100]]
         self.recientes.controls = [
-            self._tabla(filas, ["Venta", "Pedido", "SKU", "Lleva NC", "Remito", "Informado", "Cargada"])]
+            self._tabla(filas, ["Venta", "Pedido", "SKU", "Lleva NC", "Remito", "Informado", "Cargada", "Envío", ""])]
+
+    @staticmethod
+    def _celda_envio(d: dict) -> ft.Control:
+        costo = settings.costo_envio_efectivo(d)
+        if costo is not None:
+            return ft.Text(f"$ {costo:,.0f}".replace(",", "."))
+        return ft.Text("Falta", weight=ft.FontWeight.W_600, color=ft.Colors.AMBER_800)

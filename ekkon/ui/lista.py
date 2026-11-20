@@ -32,9 +32,10 @@ class VistaLista:
                                   on_change=lambda _: self._pintar())
         self.filtro_pend = ft.Dropdown(
             value="todos", width=330, dense=True, on_change=lambda _: self._pintar(),
-            options=[ft.dropdown.Option("todos", "Sin NC o esperando cobertura"),
+            options=[ft.dropdown.Option("todos", "Todo lo pendiente"),
                      ft.dropdown.Option("sin_nc", "Sin nota de crédito"),
-                     ft.dropdown.Option("cobertura", "Esperando cobertura de ML")])
+                     ft.dropdown.Option("cobertura", "Esperando cobertura de ML"),
+                     ft.dropdown.Option("envio", "Falta costo de envío (último mes)")])
         self.solo_hoy = ft.Checkbox(label="Vencen hoy", value=False, on_change=lambda _: self._pintar())
         self.contador = ft.Text("", color=ft.Colors.ON_SURFACE_VARIANT)
         # En "Devoluciones" se muestran las últimas 20; "Mostrar todas" muestra el resto (buscar y filtrar
@@ -45,7 +46,7 @@ class VistaLista:
                                      on_click=lambda _: self._cargar_todas())
         self.tabla = ft.DataTable(
             columns=[ft.DataColumn(ft.Text(t)) for t in
-                     ("Venta", "Vence", "Clasif.", "Reclamo", "%", "Estado", "NC", "Cargó", "Carga")],
+                     ("Venta", "Vence", "Clasif.", "Reclamo", "%", "Estado", "NC", "Envío", "Cargó", "Carga")],
             rows=[], heading_row_height=40, data_row_min_height=44, data_row_max_height=52,
             column_spacing=22, show_checkbox_column=False, expand=True)
         self.cargando = ft.ProgressBar(visible=False)
@@ -164,9 +165,11 @@ class VistaLista:
             if self.modo == "pendientes":
                 sin_nc = settings.necesita_nc(d) and not d.get("nc_realizada")
                 esperando = estado in ESTADOS_PENDIENTES
+                sin_envio = settings.falta_costo_envio(d)
                 que = self.filtro_pend.value or "todos"
                 if (que == "sin_nc" and not sin_nc) or (que == "cobertura" and not esperando) \
-                        or (que == "todos" and not (sin_nc or esperando)):
+                        or (que == "envio" and not sin_envio) \
+                        or (que == "todos" and not (sin_nc or esperando or sin_envio)):
                     continue
             else:
                 if self.filtro.value not in (None, "todos") and estado != self.filtro.value:
@@ -182,10 +185,20 @@ class VistaLista:
             salida.append(d)
         return salida
 
+    @staticmethod
+    def _celda_envio(d: dict) -> ft.Control:
+        costo = settings.costo_envio_efectivo(d)
+        if costo is not None:
+            return ft.Text(f"$ {costo:,.0f}".replace(",", "."), size=12)
+        if settings.falta_costo_envio(d):
+            return ft.Text("Falta", size=12, weight=ft.FontWeight.W_600, color=ft.Colors.AMBER_800)
+        return ft.Text("—", size=12, color=ft.Colors.ON_SURFACE_VARIANT)
+
     def _tarjeta(self, d: dict, hoy: str) -> ft.Control:
         vence = d.get("fecha_vencimiento", "")
         urgente = vence and vence <= hoy and d.get("estado") in ("cargada", "reclamo_armado")
-        nc = ("NC hecha" if d.get("nc_realizada") else "No lleva NC" if not settings.necesita_nc(d) else "NC pendiente")
+        nc = ("NC hecha" if d.get("nc_realizada") else "Sin factura: no lleva NC" if d.get("sin_factura")
+              else "No lleva NC" if not settings.necesita_nc(d) else "NC pendiente")
         detalle = d.get("producto") or d.get("codigo_producto") or ""
         return tarjeta_lista(ft.Column([
             ft.Row([ft.Text(d.get("numero_venta", ""), weight=ft.FontWeight.W_700, size=15),
@@ -195,7 +208,10 @@ class VistaLista:
                             color=ft.Colors.ERROR if urgente else ft.Colors.ON_SURFACE_VARIANT,
                             weight=ft.FontWeight.W_600 if urgente else None),
                     ft.Text(f"Clasif. {d.get('clasificacion', '—')}", size=12, color=ft.Colors.ON_SURFACE_VARIANT),
-                    ft.Text(nc, size=12, color=ft.Colors.ON_SURFACE_VARIANT)], spacing=12, wrap=True),
+                    ft.Text(nc, size=12, color=ft.Colors.ON_SURFACE_VARIANT),
+                    *([ft.Text("Falta costo de envío", size=12, weight=ft.FontWeight.W_600,
+                               color=ft.Colors.AMBER_800)] if settings.falta_costo_envio(d) else [])],
+                   spacing=12, wrap=True),
         ], spacing=4), lambda d=d: self.abrir_detalle(d))
 
     def _pintar(self) -> None:
@@ -226,6 +242,7 @@ class VistaLista:
                                 ft.Text("No lleva", size=12, color=ft.Colors.OUTLINE)
                                 if not settings.necesita_nc(d) else
                                 ft.Text("Pendiente", size=12, color=ft.Colors.AMBER_800)),
+                    ft.DataCell(self._celda_envio(d)),
                     ft.DataCell(ft.Text((d.get("cargado_por") or "").split("@")[0])),
                     ft.DataCell(ft.Text(fecha_corta(d.get("cargado_en")))),
                 ],
@@ -371,9 +388,11 @@ class VistaLista:
                     self._deposito(d) if self.app.es_admin else dato("Depósito de origen", d.get("deposito_origen")),
                     dato("N° de mediación", d.get("numero_mediacion")),
                     dato("Nota de crédito", "Realizada" if d.get("nc_realizada") else
-                         ("No lleva" if not settings.necesita_nc(d) else "Pendiente")),
-                    dato("Costo de envío", f"$ {d['costo_envio']:,.2f}".replace(",", "X").replace(".", ",")
-                         .replace("X", ".") if d.get("costo_envio") is not None else None)],
+                         ("Sin factura: no lleva" if d.get("sin_factura") else
+                          "No lleva" if not settings.necesita_nc(d) else "Pendiente")),
+                    dato("Costo de envío", f"$ {costo_env:,.2f}".replace(",", "X").replace(".", ",")
+                         .replace("X", ".") if (costo_env := settings.costo_envio_efectivo(d)) is not None
+                         else ("Falta" if settings.falta_costo_envio(d) else None))],
                    spacing=30, wrap=True),
             ft.Row([dato("Producto", d.get("producto")), dato_copiable("Pedido", d.get("pedido")),
                     dato("Fecha de venta", fecha_corta(d.get("fecha_venta")) if d.get("fecha_venta") else None),
@@ -459,6 +478,12 @@ class VistaLista:
             if settings.necesita_nc(d) and not d.get("nc_realizada"):
                 botones.append(ft.FilledTonalButton("Marcar NC realizada", icon=ft.Icons.RECEIPT_LONG,
                                                     on_click=lambda _: (cerrar(), self._marcar_nc(d))))
+                if d.get("tipo") != "cancelacion":
+                    botones.append(ft.OutlinedButton("Sin factura: no lleva NC", icon=ft.Icons.RECEIPT_OUTLINED,
+                                                     on_click=lambda _: (cerrar(), self._sin_factura(d))))
+            elif d.get("sin_factura") and not d.get("remito_hecho"):
+                botones.append(ft.TextButton("Deshacer \"sin factura\"", icon=ft.Icons.UNDO,
+                                             on_click=lambda _: (cerrar(), self._sin_factura(d, deshacer=True))))
             if d.get("estado") in ("reclamado", "pendiente", "reclamo_armado"):
                 botones.append(ft.FilledTonalButton("Registrar resultado", icon=ft.Icons.FACT_CHECK,
                                                     on_click=lambda _: (cerrar(), self.registrar_resultado(d))))
@@ -518,33 +543,33 @@ class VistaLista:
         self.abrir_detalle(d)
 
     def _costo_envio(self, d: dict) -> None:
-        actual = d.get("costo_envio")
-        campo = ft.TextField(label="Costo de envío", prefix_text="$ ", autofocus=True, width=260,
-                             value="" if actual is None else f"{actual:.2f}".replace(".", ","),
-                             helper_text="Ponga 0 si no tuvo costo de envío.")
-        error = ft.Text("", color=ft.Colors.ERROR, visible=False)
-        dlg = ft.AlertDialog(modal=True, title=ft.Text(f"Costo de envío — {d['numero_venta']}"),
-                             content=ft.Container(ft.Column([campo, error], tight=True), width=420))
+        pedir_costo_envio(self.app, d, al_guardar=lambda: self._reabrir(d),
+                          al_cancelar=lambda: self._reabrir(d, recargar=False))
 
-        def guardar(_=None):
-            valor = importe(campo.value)
-            if valor is None:
-                error.value, error.visible = "Ingrese un importe.", True
-                self.page.update()
-                return
-            self.page.close(dlg)
+    def _sin_factura(self, d: dict, deshacer: bool = False) -> None:
+        """Sin factura (bajada de línea nov-2026): no lleva NC; NdC = "No" y va a la espera del remito interno."""
+        if deshacer:
+            campos = {"sin_factura": False, "lleva_nc": True, "transferencia": ""}
+            texto = "Se deshizo: vuelve a llevar NC."
+        else:
+            campos = {"sin_factura": True, "lleva_nc": False, "transferencia": settings.TRANSF_ESPERA_REMITO,
+                      "remito_hecho": False}
+            texto = ("Marcada sin factura: en la planilla quedará NdC \"No\" y Transferencia "
+                     f"\"{settings.TRANSF_ESPERA_REMITO}\". Aparece en Cancelaciones → Remito interno.")
+
+        def hacer():
             try:
-                self.app.devs.actualizar(d["numero_venta"], {"costo_envio": valor})
-                self.app.avisar("Costo de envío guardado. Se escribe en la planilla al sincronizar.")
+                self.app.devs.actualizar(d["numero_venta"], campos)
+                self.app.avisar(f"Venta {d['numero_venta']}: {texto}")
             except FirebaseError as e:
                 self.app.manejar_error(e)
             self._reabrir(d)
 
-        campo.on_submit = guardar
-        dlg.actions = [ft.TextButton("Cancelar", on_click=lambda _: (self.page.close(dlg),
-                                                                    self._reabrir(d, recargar=False))),
-                       ft.FilledButton("Guardar", on_click=guardar)]
-        self.page.open(dlg)
+        if deshacer:
+            hacer()
+        else:
+            self.app.confirmar("Sin factura", f"¿La venta {d['numero_venta']} no tiene factura y no lleva NC? "
+                               "Se llevará con remito interno.", hacer, "Sí, no lleva NC")
 
     def _marcar_nc(self, d: dict) -> None:
         clasif = d.get("clasificacion")
@@ -658,3 +683,39 @@ class VistaLista:
         self.app.confirmar("Borrar devolución",
                            f"¿Seguro que desea borrar la venta {d['numero_venta']} y sus fotos? No se puede deshacer.",
                            hacer, "Borrar")
+
+
+def pedir_costo_envio(app, d: dict, al_guardar=None, al_cancelar=None) -> None:
+    """Diálogo para cargar el costo de envío (también lo usan las cancelaciones)."""
+    page = app.page
+    actual = d.get("costo_envio")
+    campo = ft.TextField(label="Costo de envío", prefix_text="$ ", autofocus=True, width=260,
+                         value="" if actual is None else f"{actual:.2f}".replace(".", ","),
+                         helper_text="Ponga 0 si no tuvo costo de envío.")
+    error = ft.Text("", color=ft.Colors.ERROR, visible=False)
+    dlg = ft.AlertDialog(modal=True, title=ft.Text(f"Costo de envío — {d['numero_venta']}"),
+                         content=ft.Container(ft.Column([campo, error], tight=True), width=420))
+
+    def guardar(_=None):
+        valor = importe(campo.value)
+        if valor is None:
+            error.value, error.visible = "Ingrese un importe.", True
+            page.update()
+            return
+        page.close(dlg)
+        try:
+            app.devs.actualizar(d["numero_venta"], {"costo_envio": valor})
+            app.avisar("Costo de envío guardado. Se escribe en la planilla al sincronizar.")
+        except FirebaseError as e:
+            app.manejar_error(e)
+        if al_guardar:
+            al_guardar()
+
+    def cancelar(_):
+        page.close(dlg)
+        if al_cancelar:
+            al_cancelar()
+
+    campo.on_submit = guardar
+    dlg.actions = [ft.TextButton("Cancelar", on_click=cancelar), ft.FilledButton("Guardar", on_click=guardar)]
+    page.open(dlg)
