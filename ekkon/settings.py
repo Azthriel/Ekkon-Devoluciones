@@ -127,12 +127,8 @@ DIAS_AVISO_COSTO_ENVIO = 30   # en Pendientes se avisa si falta el costo de env�
 
 
 def costo_envio_efectivo(d: dict):
-    """Costo de envío cargado; con motivo "no lo quiere" es siempre 0 aunque no se haya cargado."""
-    if d.get("costo_envio") is not None:
-        return d["costo_envio"]
-    if str(d.get("motivo") or "").strip().lower() == "no lo quiere":
-        return 0.0
-    return None
+    """Costo de envío cargado (None si no se cargó)."""
+    return d.get("costo_envio")
 
 
 def falta_costo_envio(d: dict, ahora=None) -> bool:

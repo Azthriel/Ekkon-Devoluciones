@@ -51,7 +51,10 @@ COLUMNAS_INFORME = (C_FECHA_COMPRA, C_ARTICULO, C_SKU, C_DEP_ORIGEN, C_COSTO, C_
 
 # Valores de la planilla que el programa puede reemplazar aunque la celda no esté vacía
 REEMPLAZABLES = {C_ESTADO1: {"pendiente"}, C_CLASIF: {"service interno"}, C_CONDICION: {"service interno"},
-                 C_TRANSF: {"a la espera de remito"}}
+                 C_TRANSF: {"a la espera de remito"},
+                 # Un 0 en el costo de envío se reemplaza por el valor cargado en el programa (la 0.9.2 escribía
+                 # 0 en todos los "no lo quiere")
+                 C_COSTO_ENVIO: {"0", "0.0", "0,0", "$ 0", "$0"}}
 
 # Columnas donde el valor del programa es solo el inicial: si después cambia en la planilla
 # (Email enviado, Realizada) no es una diferencia para reportar
@@ -211,7 +214,7 @@ def valores_de(dev: dict, hoy: dt.date | None = None) -> dict:
     if dev.get("nota_reparacion"):
         v[C_NOTAS] = dev["nota_reparacion"]
     if settings.costo_envio_efectivo(dev) is not None:
-        v[C_COSTO_ENVIO] = settings.costo_envio_efectivo(dev)   # "no lo quiere": siempre 0
+        v[C_COSTO_ENVIO] = settings.costo_envio_efectivo(dev)
     if dev.get("tipo") == "cancelacion" or dev.get("sin_factura"):
         # Cancelaciones y devoluciones sin factura: NdC dice si lleva nota de crédito ("No" si no tiene factura);
         # la transferencia es por remito interno

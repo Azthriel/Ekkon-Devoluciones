@@ -446,7 +446,7 @@ def test_sin_factura_escribe_ndc_no_y_espera_remito():
     assert P.valores_de(d, HOY)[P.C_TRANSF] == settings.TRANSF_REALIZADA
 
 
-def test_no_lo_quiere_costo_envio_cero_y_aviso_de_faltante():
+def test_aviso_de_costo_de_envio_faltante():
     import datetime as dt
     from ekkon import settings
     ahora = dt.datetime(2026, 11, 20, 12, tzinfo=dt.timezone.utc)
@@ -454,8 +454,17 @@ def test_no_lo_quiere_costo_envio_cero_y_aviso_de_faltante():
     viejo = {"motivo": "cancelado", "cargado_en": ahora - dt.timedelta(days=90)}
     no_quiere = {"motivo": "no lo quiere", "cargado_en": ahora}
     assert settings.falta_costo_envio(nuevo, ahora) and not settings.falta_costo_envio(viejo, ahora)
-    assert not settings.falta_costo_envio(no_quiere, ahora)
-    assert P.valores_de(dev("2000014434008281", motivo="no lo quiere"), HOY)[P.C_COSTO_ENVIO] == 0.0
+    assert settings.falta_costo_envio(no_quiere, ahora)   # "no lo quiere" no siempre es 0
+    assert P.C_COSTO_ENVIO not in P.valores_de(dev("2000014434008281", motivo="no lo quiere"), HOY)
+
+
+def test_costo_envio_real_reemplaza_el_cero_de_la_planilla():
+    h = P.Hoja([ENCABEZADOS, fila(**{"Fecha revisión": P.serial(HOY), "N° Venta": "2000018192476204",
+                                     "Costo de envio": 0})])
+    d = dev("2000018192476204", costo_envio=8710.0, planilla_en=HOY.isoformat())
+    plan = P.planificar(h, [d], hoy=HOY)
+    col = P.letra_columna(h.indice(P.C_COSTO_ENVIO))
+    assert dict(plan.celdas)[f"{col}2"] == 8710.0 and plan.conflictos == []
 
 
 def test_corregir_el_programa_con_la_planilla():
