@@ -68,8 +68,8 @@ class VistaLista:
 
     def _vista_listado(self) -> ft.Control:
         if self.modo == "pendientes":
-            encabezado = titulo("Pendientes", "Devoluciones sin nota de crédito (con o sin reclamo) y reclamos "
-                                              "enviados que esperan la respuesta de Mercado Libre.")
+            encabezado = titulo("Pendientes", "Sin nota de crédito, reclamos que esperan respuesta de Mercado "
+                                              "Libre y recientes sin costo de envío.")
         else:
             encabezado = titulo("Devoluciones", "Toque una fila para ver el detalle.")
         filtros: list[ft.Control] = [self.buscar]
