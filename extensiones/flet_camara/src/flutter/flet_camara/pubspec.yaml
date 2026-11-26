@@ -10,4 +10,4 @@ dependencies:
     sdk: flutter
   flet: '>=0.25.0 <1.0.0'
   image_picker: ^1.1.2
-  mobile_scanner: 6.0.11
+  mobile_scanner: 6.0.10   # 6.0.11 usa CameraX 1.5, que pide un Android Gradle Plugin más nuevo que el de Flet 0.28
