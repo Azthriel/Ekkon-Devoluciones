@@ -11,6 +11,7 @@ from ..local import abrir_url
 
 from .. import local, settings
 from ..datos import ConfigApp, Devoluciones, Usuarios
+from ..envios_idx import IndiceEnvios
 from ..os_idx import IndiceOS
 from ..reparaciones import Reparaciones
 from ..ventas import Indice
@@ -35,6 +36,8 @@ class App:
         self.cfg = ConfigApp(self.fs)
         self.indice = Indice(self.fs)
         self.indice_os = IndiceOS(self.fs)
+        self.indice_envios = IndiceEnvios(self.fs)
+        self.pendiente: dict = {}   # datos para la próxima pantalla (p. ej. un N° de venta para cargar)
         self.reparaciones = Reparaciones(self.fs)
         self.selector_fotos = ft.FilePicker()
         self._vigilante: threading.Thread | None = None
@@ -81,10 +84,13 @@ class App:
         p.overlay.append(self.selector_fotos)
         # Cámara del celular (extensión propia, solo existe en el .apk)
         self.camara = None
+        self.escaner = None
         if p.platform == ft.PagePlatform.ANDROID:
             from ..camara import Camara
+            from ..escaner import Escaner
             self.camara = Camara()
-            p.overlay.append(self.camara)
+            self.escaner = Escaner()
+            p.overlay.extend([self.camara, self.escaner])
         self._fallas = self._diagnostico() if comun.MOVIL else []
         if self.camara is not None and self._es_prueba():
             self._pantalla_prueba_camara()
@@ -115,25 +121,51 @@ class App:
         return importlib.util.find_spec("ekkon._prueba") is not None
 
     def _pantalla_prueba_camara(self) -> None:
-        resultado = ft.Text("CAMARA SIN PROBAR", size=22)
+        """Pantalla de la prueba automática (cámara y escáner). Solo existe en el .apk de prueba."""
+        resultado = ft.Text("SIN PROBAR", size=20)
 
-        def probar(_):
+        def poner(texto):
+            resultado.value = texto
+            self.page.update()
+
+        def probar_camara(_):
             try:
                 ruta = self.camara.tomar_foto(espera=120)
                 if ruta:
                     from ..fotos import comprimir
-                    resultado.value = f"FOTO OK {len(comprimir(ruta))} bytes"
+                    poner(f"FOTO OK {len(comprimir(ruta))} bytes")
                 else:
-                    resultado.value = "FOTO CANCELADA"
+                    poner("FOTO CANCELADA")
             except Exception as e:  # noqa: BLE001
-                resultado.value = f"FOTO ERROR {e}"
-            self.page.update()
+                poner(f"FOTO ERROR {e}")
+
+        def probar_lectura(_):
+            try:
+                import barcode
+                from barcode.writer import ImageWriter
+                base = str(local.carpeta_datos() / "prueba_codigo")
+                ruta = barcode.get("code128", "48577583673", writer=ImageWriter()).save(
+                    base, options={"write_text": False, "module_width": 0.5, "module_height": 30})
+                poner(f"LECTURA {self.escaner.analizar(ruta) or 'VACIA'}")
+            except Exception as e:  # noqa: BLE001
+                poner(f"LECTURA ERROR {e}")
+
+        def probar_escaner(_):
+            try:
+                poner(f"ESCANER {self.escaner.escanear(espera=120) or 'CANCELADO'}")
+            except Exception as e:  # noqa: BLE001
+                poner(f"ESCANER ERROR {e}")
+
+        def zona(texto, al_tocar, color):
+            return ft.Container(ft.Text(texto, size=26), bgcolor=color, on_click=al_tocar,
+                                alignment=ft.alignment.center, expand=True)
 
         self._set(ft.Column([
-            ft.Container(ft.Text("PROBAR CAMARA", size=30), bgcolor=ft.Colors.PRIMARY_CONTAINER, on_click=probar,
-                         alignment=ft.alignment.center, expand=True),
-            ft.Container(resultado, height=200, alignment=ft.alignment.center),
-        ], expand=True))
+            zona("PROBAR CAMARA", probar_camara, ft.Colors.PRIMARY_CONTAINER),
+            ft.Container(resultado, height=120, alignment=ft.alignment.center),
+            zona("PROBAR LECTURA", probar_lectura, ft.Colors.TERTIARY_CONTAINER),
+            zona("ABRIR ESCANER", probar_escaner, ft.Colors.SECONDARY_CONTAINER),
+        ], expand=True, spacing=0))
 
     @staticmethod
     def _diagnostico() -> list[str]:
@@ -202,7 +234,9 @@ class App:
     def _migraciones(self) -> None:
         with self.candado:
             cambios = self._migrar()
-        if cambios and self._seccion_actual in (1, 2):
+        nombres = [s[0] for s in self._secciones()]
+        actual = nombres[self._seccion_actual] if self._seccion_actual < len(nombres) else ""
+        if cambios and actual in ("Devoluciones", "Pendientes"):
             try:
                 self.mostrar_shell(self._seccion_actual)
             except Exception:  # noqa: BLE001
@@ -442,10 +476,15 @@ class App:
         verificar = ("Verificar", ft.Icons.FACT_CHECK_OUTLINED, ft.Icons.FACT_CHECK,
                      lambda: VistaVerificar(self).control())
 
+        from .buscar import VistaBuscar
+
         secciones = [
             ("Cargar", ft.Icons.ADD_A_PHOTO_OUTLINED, ft.Icons.ADD_A_PHOTO, lambda: VistaCarga(self).control()),
             ("Devoluciones", ft.Icons.LIST_ALT_OUTLINED, ft.Icons.LIST_ALT,
              lambda: VistaLista(self).control()),
+            # Etiquetas que traen solo el N° de envío: de ahí a la venta y al producto
+            ("Buscar venta", ft.Icons.QR_CODE_SCANNER_OUTLINED, ft.Icons.QR_CODE_SCANNER,
+             lambda: VistaBuscar(self).control()),
         ]
         if self.es_service:
             secciones.append(reparaciones)
@@ -454,7 +493,7 @@ class App:
         if self.es_admin and comun.MOVIL:
             # En el celular, lo del día a día; planillas, emails, usuarios y ajustes quedan en la PC
             secciones += [("Pendientes", ft.Icons.HOURGLASS_EMPTY, ft.Icons.HOURGLASS_FULL,
-                           lambda: VistaLista(self, modo="pendientes").control()), reparaciones, verificar]
+                           lambda: VistaLista(self, modo="pendientes").control()), reparaciones]
         elif self.es_admin:
             secciones += [
                 ("Pendientes", ft.Icons.HOURGLASS_EMPTY, ft.Icons.HOURGLASS_FULL,
@@ -548,6 +587,12 @@ class App:
 
     def ir_a(self, indice: int) -> None:
         self.mostrar_shell(indice)
+
+    def ir_a_seccion(self, nombre: str, **pendiente) -> None:
+        """Abre una sección por nombre, pasándole datos (por ejemplo numero="2000…" para Cargar)."""
+        self.pendiente = pendiente
+        nombres = [s[0] for s in self._secciones()]
+        self.mostrar_shell(nombres.index(nombre) if nombre in nombres else 0)
 
 
 def main(page: ft.Page) -> None:

@@ -62,6 +62,9 @@ class VistaLista:
     # ------------------------------------------------------------ armado
 
     def control(self) -> ft.Control:
+        buscar = self.app.pendiente.pop("buscar", "") if hasattr(self.app, "pendiente") else ""
+        if buscar:
+            self.buscar.value = buscar   # viene de "Buscar venta"
         self.contenedor.content = self._vista_listado()
         self.recargar()
         return self.contenedor
@@ -404,6 +407,7 @@ class VistaLista:
                        dato("Notas", d.get("notas"))], spacing=30, wrap=True)]
               if d.get("tipo") == "cancelacion" else []),
             *self._bloque_reparacion(d, dato),
+            *self._aviso_varios_articulos(d),
             dato("Problema informado por el comprador", d.get("problema_comprador")),
             dato("Estado en que llegó", d.get("descripcion")),
         ]
@@ -571,7 +575,43 @@ class VistaLista:
             self.app.confirmar("Sin factura", f"¿La venta {d['numero_venta']} no tiene factura y no lleva NC? "
                                "Se llevará con remito interno.", hacer, "Sí, no lleva NC")
 
-    def _marcar_nc(self, d: dict) -> None:
+    def _articulos(self, d: dict) -> list:
+        """Artículos del pedido de la venta (del informe de ventas); [] si no se sabe."""
+        try:
+            return self.app.indice.articulos_del_pedido(d.get("numero_venta", ""))
+        except FirebaseError:
+            return []
+
+    def _texto_varios_articulos(self, d: dict) -> str | None:
+        arts = self._articulos(d)
+        total = sum(c for *_x, c in arts)
+        if len(arts) <= 1 and total <= 1:
+            return None
+        lineas = [f"• {cant} × {prod or 'Producto'} (SKU {cod or '—'})" + ("  ← el devuelto" if v == d.get("numero_venta")
+                                                                           else "")
+                  for v, cod, prod, cant in arts]
+        pedido = f"El pedido {d['pedido']}" if d.get("pedido") else "El pedido"
+        return (f"{pedido} tiene {total} artículos. Haga la NC solo por lo que se devolvió "
+                f"(SKU {d.get('codigo_producto') or '—'}):\n" + "\n".join(lineas))
+
+    def _aviso_varios_articulos(self, d: dict) -> list[ft.Control]:
+        if d.get("nc_realizada") or not settings.necesita_nc(d):
+            return []
+        texto = self._texto_varios_articulos(d)
+        if not texto:
+            return []
+        return [ft.Container(ft.Row([ft.Icon(ft.Icons.WARNING_AMBER, color=ft.Colors.AMBER_800),
+                                     ft.Text(texto, size=13, expand=True, selectable=True)],
+                                    vertical_alignment=ft.CrossAxisAlignment.START),
+                             padding=12, border_radius=10, bgcolor=ft.Colors.with_opacity(0.10, ft.Colors.AMBER_800),
+                             border=ft.border.all(1, ft.Colors.with_opacity(0.4, ft.Colors.AMBER_800)))]
+
+    def _marcar_nc(self, d: dict, confirmado: bool = False) -> None:
+        aviso = None if confirmado else self._texto_varios_articulos(d)
+        if aviso:
+            self.app.confirmar("Pedido con varios artículos", aviso + "\n\n¿La NC se hizo solo por lo devuelto?",
+                               lambda: self._marcar_nc(d, confirmado=True), "Sí, marcar NC realizada")
+            return
         clasif = d.get("clasificacion")
         if not clasif:
             self.app.avisar("La venta no tiene clasificación. Edítela antes de marcar la NC.", error=True)

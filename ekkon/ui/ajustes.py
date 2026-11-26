@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import flet as ft
 
-from .. import os_idx, sheets, ventas
+from .. import envios_idx, os_idx, sheets, ventas
 from ..firebase import FirebaseError
 from ..version import VERSION
 from .comun import seccion, tarjeta, titulo
@@ -114,6 +114,42 @@ class VistaAjustes:
             self.page.update()
 
         selector_os.on_result = os_elegido
+
+        # Informe de devoluciones (N° de envío -> venta), para "Buscar venta"
+        selector_env = ft.FilePicker()
+        self.page.overlay.append(selector_env)
+        estado_env = ft.Text(size=13)
+
+        def pintar_env():
+            try:
+                m = self.app.indice_envios.meta()
+            except FirebaseError:
+                m = {}
+            if m.get("importado_en"):
+                estado_env.value = (f"Último informe de devoluciones: "
+                                    f"{m['importado_en'].astimezone().strftime('%d/%m/%Y %H:%M')} — "
+                                    f"{m.get('envios_total', 0)} envíos (se guardan 180 días).")
+                estado_env.color = None
+            else:
+                estado_env.value, estado_env.color = ("Todavía no se importó el informe de devoluciones.",
+                                                      ft.Colors.ERROR)
+
+        def env_elegido(e: ft.FilePickerResultEvent):
+            if not e.files:
+                return
+            try:
+                with open(e.files[0].path, "rb") as fh:
+                    nuevas = envios_idx.leer_csv(fh.read())
+                self.app.indice_envios.importar(nuevas, self.app.usuario.get("email", ""))
+                self.app.avisar(f"Informe de devoluciones importado ({len(nuevas)} envíos).")
+            except (ValueError, OSError) as err:
+                self.app.avisar(str(err), error=True)
+            except FirebaseError as err:
+                self.app.manejar_error(err)
+            pintar_env()
+            self.page.update()
+
+        selector_env.on_result = env_elegido
         planilla_rep = ft.TextField(label="Link de la planilla de Reparaciones (Google Sheets)",
                                     value=c.get("planilla_reparaciones_url", ""),
                                     hint_text="https://docs.google.com/spreadsheets/d/…")
@@ -174,6 +210,7 @@ class VistaAjustes:
         pintar_clave()
         pintar_informe()
         pintar_os()
+        pintar_env()
         return ft.Column([
             titulo("Ajustes", f"Versión instalada: {VERSION}"),
             tarjeta(ft.Column([seccion("Reclamos"), claude], spacing=14)),
@@ -209,6 +246,17 @@ class VistaAjustes:
                                              on_click=lambda _: selector_os.pick_files(
                                                  dialog_title="Elegir el informe de OS", allowed_extensions=["csv"]))]),
                 estado_os,
+            ], spacing=12)),
+            tarjeta(ft.Column([
+                seccion("Buscar venta (N° de envío)"),
+                ft.Text("Informe \"Devoluciones para APP\" de Virtual Seller → Exportar detalles → UTF-8 y .csv. "
+                        "Sirve para encontrar la venta cuando la etiqueta trae solo el código de barras del envío.",
+                        size=12, color=ft.Colors.ON_SURFACE_VARIANT),
+                ft.Row([ft.FilledTonalButton("Importar informe de devoluciones .csv", icon=ft.Icons.UPLOAD_FILE,
+                                             on_click=lambda _: selector_env.pick_files(
+                                                 dialog_title="Elegir el informe de devoluciones",
+                                                 allowed_extensions=["csv"]))]),
+                estado_env,
             ], spacing=12)),
             tarjeta(ft.Column([seccion("Emails"), para_transf, para_cancel], spacing=14)),
             tarjeta(ft.Column([seccion("Actualizaciones"), ft.Row([ultima, minima], spacing=16), descarga],

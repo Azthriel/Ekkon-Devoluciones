@@ -394,8 +394,13 @@ def planificar(hoja: Hoja, devoluciones: list[dict], ventas: dict | None = None,
         if not dev.get("planilla_en") and isinstance(cargado, dt.datetime):
             pisar[C_FECHA_REV] = {cargado.astimezone().date()}
         if dev.get("clasificacion_original"):
-            # La reparación cambió la clasificación (ej. Service -> B): se reemplaza la anterior
-            pisar[C_CLASIF] = {dev["clasificacion_original"]}
+            # La reparación cambió la clasificación (ej. Service -> B): se reemplaza la anterior,
+            # y con ella el depósito final y la transferencia
+            pisar[C_CLASIF] = {dev["clasificacion_original"], *(dev.get("clasificacion_anteriores") or [])}
+            if dev.get("deposito_final_anteriores"):
+                pisar[C_DEP_FINAL] = set(dev["deposito_final_anteriores"])
+            if dev.get("transferencia_anteriores"):
+                pisar[C_TRANSF] = set(dev["transferencia_anteriores"])
         fila0 = hoja.buscar(venta)
         if fila0 is None and carrito:
             fila0 = hoja.buscar(carrito)

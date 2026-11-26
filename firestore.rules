@@ -46,6 +46,11 @@ service cloud.firestore {
       allow read: if activo();
       allow write: if admin();
     }
+    // Informe "Devoluciones para APP" (N° de envío -> venta)
+    match /envios_idx/{doc} {
+      allow read: if activo();
+      allow write: if admin();
+    }
 
     // Reparaciones: las cargan el administrador y el perfil Service
     match /reparaciones/{rep} {

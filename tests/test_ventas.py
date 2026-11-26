@@ -48,6 +48,12 @@ def test_partes_y_busqueda():
     r = idx.buscar("2000013782033763")                     # carrito con dos ventas
     assert r.tipo == "carrito" and r.venta is None and len(r.opciones) == 2
     assert idx.buscar("2000099999999999").tipo == "no_encontrado"
+    # Pedido con varios artículos (carrito con dos ventas) y venta sola
+    arts = idx.articulos_del_pedido(r.opciones[0][0])
+    assert len(arts) == 2 and {a[0] for a in arts} == {o[0] for o in r.opciones}
+    assert idx.articulos_del_pedido("2000017796698832") == [("2000017796698832", todas["2000017796698832"].codigo,
+                                                             todas["2000017796698832"].producto, 1)]
+    assert idx.articulos_del_pedido("2000099999999999") == []
 
 
 def test_combinar_conserva_180_dias():

@@ -9,6 +9,7 @@ from ..local import abrir_url
 
 from .. import local, settings
 from ..datos import armar_prompt, leer_respuesta_claude, validar_numero_venta
+from ..envios_idx import es_envio, solo_digitos
 from ..firebase import FirebaseError
 from ..ventas import Venta
 from ..fotos import comprimir, miniatura_b64
@@ -32,6 +33,10 @@ class VistaCarga:
         self.vence = (existente or {}).get("fecha_vencimiento") or dt.date.today().isoformat()
         self.venta_info: Venta | None = None
         self._ultimo_buscado = ""
+        self._ultimo_envio = ""
+        self._nota_envio = ""   # "N° de envío X → Venta # Y" cuando se escaneó la etiqueta del envío
+        # Número que viene de otra pantalla (Buscar venta → "Cargar esta devolución")
+        self._numero_inicial = "" if self.editando else str(app.pendiente.pop("numero", "") or "")
         self._armar_controles()
         if self.editando:
             self._cargar_existente()
@@ -40,9 +45,13 @@ class VistaCarga:
 
     def _armar_controles(self) -> None:
         self.numero = ft.TextField(
-            label="Venta # o ID Carrito *", hint_text="2000012345678901", width=320,
+            label="Venta #, ID Carrito o N° de envío *", hint_text="2000012345678901", width=320,
             prefix_icon=ft.Icons.TAG, on_change=self._validar_numero, on_blur=self._verificar_duplicado,
             read_only=self.editando, keyboard_type=ft.KeyboardType.NUMBER if comun.MOVIL else None)
+        if getattr(self.app, "escaner", None) is not None and not self.editando:
+            # En el celular: escanear el código de barras de la etiqueta (N° de envío o de venta)
+            self.numero.suffix = ft.IconButton(ft.Icons.QR_CODE_SCANNER, tooltip="Escanear la etiqueta",
+                                               on_click=self._escanear)
         self.info_venta = ft.Container(visible=False, border_radius=10, padding=ft.padding.symmetric(10, 14))
         self.btn_vence = ft.OutlinedButton(icon=ft.Icons.EVENT, on_click=self._elegir_fecha, height=48)
         self.selector_fecha = ft.DatePicker(
@@ -167,6 +176,9 @@ class VistaCarga:
             ft.Row([self.btn_guardar, self.btn_limpiar] if not self.editando else
                    [self.btn_guardar, ft.TextButton("Cancelar", on_click=lambda _: self._terminar())]),
         ], spacing=16, scroll=ft.ScrollMode.AUTO, expand=True)
+        if self._numero_inicial:
+            self.numero.value = self._numero_inicial
+            self._validar_numero()
         return cuerpo
 
     # ------------------------------------------------------------ datos existentes
@@ -198,7 +210,42 @@ class VistaCarga:
 
     # ------------------------------------------------------------ eventos
 
+    def _escanear(self, _=None) -> None:
+        try:
+            codigo = self.app.escaner.escanear()
+        except Exception as e:  # noqa: BLE001 - cancelado, sin permiso de cámara o tiempo agotado
+            self.app.avisar(f"No se pudo escanear: {e}", error=True)
+            return
+        if codigo:
+            self.numero.value = codigo
+            self._validar_numero()
+            self._verificar_duplicado()
+            self.page.update()
+
+    def _desde_envio(self) -> None:
+        """Si escanearon el N° de envío de la etiqueta, lo cambia por el Venta # (informe de devoluciones)."""
+        crudo = solo_digitos(self.numero.value)
+        if self.editando or not es_envio(crudo) or crudo == self._ultimo_envio:
+            return
+        self._ultimo_envio = crudo
+        try:
+            encontrados = self.app.indice_envios.buscar(crudo)
+        except FirebaseError:
+            encontrados = []
+        if not encontrados:
+            self._nota_envio = ""
+            self._mostrar_info(ft.Colors.AMBER_800, ft.Icons.WARNING_AMBER,
+                               f"{crudo} parece un N° de envío, pero no está en el informe de devoluciones. "
+                               "Pida que se importe uno más reciente o busque el Venta # en ML.")
+            return
+        e = encontrados[0]
+        self._nota_envio = f"N° de envío {crudo}  →  {e.get('producto') or 'venta'} (SKU {e.get('sku') or '—'})"
+        self.numero.value = e.get("venta", "")
+        if not (self.codigo.value or "").strip() and e.get("sku"):
+            self.codigo.value = e["sku"]
+
     def _validar_numero(self, _=None) -> str | None:
+        self._desde_envio()
         numero, error, aviso = validar_numero_venta(self.numero.value)
         self.numero.error_text = None
         self.numero.helper_text = aviso
@@ -212,6 +259,8 @@ class VistaCarga:
     # ------------------------------------------------------------ informe de ventas
 
     def _mostrar_info(self, color, icono, texto: str) -> None:
+        if self._nota_envio and not texto.startswith(self._nota_envio):
+            texto = f"{self._nota_envio}\n{texto}"
         self.info_venta.content = ft.Row([ft.Icon(icono, color=color, size=20),
                                           ft.Text(texto, size=13, expand=True, selectable=True)],
                                          vertical_alignment=ft.CrossAxisAlignment.START)
@@ -589,6 +638,7 @@ class VistaCarga:
         self.numero.helper_text = None
         self.numero.read_only = False
         self.venta_info, self._ultimo_buscado = None, ""
+        self._ultimo_envio, self._nota_envio = "", ""
         self.info_venta.visible = False
         self.clasif.value = None
         self.condicion.value = None

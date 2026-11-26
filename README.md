@@ -37,6 +37,10 @@ Programa de Windows para cargar y gestionar las devoluciones de Mercado Libre.
   se marca Funciona / No funciona (con motivo) y se escribe en "¿Verificado?" y "Notas verificado" de la planilla de
   Reparaciones. Las reparaciones también usan la caché local. En el detalle, tocar el Venta #, el pedido o el carrito
   los copia.
+- **Buscar venta (0.10)**: informe "Devoluciones para APP" (Virtual Seller) importado en *Ajustes*; se escanea el
+  código de barras del N° de envío (lector USB en la PC o cámara del celular) y muestra la venta, el producto y si ya
+  está cargada. "Cargar" también acepta el N° de envío. Aviso de pedido con varios artículos al hacer la NC. La
+  reparación que cambia la clasificación también cambia el depósito final y la transferencia.
 - **Emails**: arma la solicitud de transferencia con las filas que tienen Transferencia = "A la espera de
   movimiento". Origen siempre Service Podestá (ahí entra la unidad al hacer la NC); destino según "Deposito final".
   Incluye *Abrir en Gmail* y *Marcar como enviado*.

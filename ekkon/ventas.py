@@ -227,6 +227,23 @@ class Indice:
             return Resultado("carrito", None, opciones)
         return Resultado("no_encontrado")
 
+    def articulos_del_pedido(self, numero: str) -> list[tuple[str, str, str, int]]:
+        """Artículos del mismo pedido (carrito) que la venta: [(venta, codigo, producto, cantidad)].
+
+        Sirve para avisar, al hacer la NC, que el pedido tiene más cosas que lo que se devolvió.
+        """
+        v = self.venta(numero)
+        if not v:
+            return []
+        if not v.carrito:
+            return [(v.venta, v.codigo, v.producto, v.cantidad or 1)]
+        opciones = self._parte(parte(v.carrito))["c"].get(v.carrito) or [[v.venta, v.codigo, v.producto]]
+        salida = []
+        for venta, codigo, producto in opciones:
+            otra = v if venta == v.venta else self.venta(venta)
+            salida.append((venta, codigo, producto, (otra.cantidad if otra else 1) or 1))
+        return salida
+
     def todas(self) -> dict[str, Venta]:
         nombres = [f"p{i:02d}" for i in range(PARTES)]
         faltan = [n for n in nombres if n not in self._cache]

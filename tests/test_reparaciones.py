@@ -172,3 +172,45 @@ def test_verificacion_se_escribe_y_al_reenviar_se_borra():
 def test_estado_final_nuevo_y_outlet_a():
     assert R.clasificacion_final({"estado_final": "Nuevo"}) == "N"
     assert R.clasificacion_final({"estado_final": "Outlet A"}) == "A"
+
+
+def test_service_que_pasa_a_nuevo_cambia_deposito_y_transferencia():
+    from ekkon import settings
+    venta = "2000018604612862"
+    r = {"numero": venta, "estados": ["Finalizado"], "reparado": "Si", "estado_final": "Nuevo",
+         "fecha_reparacion": "2026-11-20", "que_se_hizo": "Limpieza."}
+    d = dev(venta, clasificacion="Service", condicion="Service", nc_realizada=True,
+            deposito_final="Service Podesta", transferencia=settings.TRANSF_REALIZADA)
+    cambios = R.cambios_para_devolucion(d, r)
+    assert cambios["clasificacion"] == "N" and cambios["deposito_final"] == settings.DEPOSITO_FINAL["N"]
+    assert cambios["transferencia"] == settings.TRANSF_ESPERA
+    d.update(cambios)
+    h = P.Hoja([ENCABEZADOS, fila(**{"N° Venta": venta, "Clasificacion": "Service", "NdC": "Si",
+                                    "Deposito final": "Service Podesta", "Transferencia": "Realizada"})])
+    escritas = dict(P.planificar(h, [d], hoy=HOY).celdas)
+    col = lambda nombre: P.letra_columna(h.indice(nombre)) + "2"   # noqa: E731
+    assert escritas[col(P.C_CLASIF)] == "N"
+    assert escritas[col(P.C_DEP_FINAL)] == settings.DEPOSITO_FINAL["N"]
+    assert escritas[col(P.C_TRANSF)] == settings.TRANSF_ESPERA
+    # A Scrap sin NC hecha: cambia el depósito, la transferencia se decide al hacer la NC
+    d2 = dev(venta, clasificacion="Service", deposito_final="Service Podesta")
+    c2 = R.cambios_para_devolucion(d2, {**r, "estado_final": "Scrap"})
+    assert c2["deposito_final"] == "Scrap" and "transferencia" not in c2
+    # A Outlet B: sigue en Service Podesta, no cambia nada más
+    c3 = R.cambios_para_devolucion(dict(d2, nc_realizada=True, transferencia="Realizada"),
+                                   {**r, "estado_final": "Outlet B"})
+    assert c3["clasificacion"] == "B" and "transferencia" not in c3 and "deposito_final" not in c3
+
+
+def test_devolucion_que_ya_habia_cambiado_de_clasificacion_corrige_deposito():
+    from ekkon import settings
+    r = {"numero": "2000018604612862", "estados": ["Finalizado"], "reparado": "Si", "estado_final": "Scrap",
+         "fecha_reparacion": "2026-11-20", "que_se_hizo": "Sin arreglo."}
+    d = dev("2000018604612862", clasificacion="Scrap", clasificacion_original="Service", nc_realizada=True,
+            deposito_final="Service Podesta", transferencia="Realizada",
+            nota_reparacion=R.nota_devolucion(r))
+    c = R.cambios_para_devolucion(d, r)
+    assert c == {"deposito_final": "Scrap", "deposito_final_anteriores": ["Service Podesta"],
+                 "transferencia": settings.TRANSF_ESPERA, "transferencia_anteriores": ["Realizada"]}
+    d.update(c)
+    assert R.cambios_para_devolucion(d, r) == {}

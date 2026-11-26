@@ -41,6 +41,9 @@ jobs:
       - name: Compilar .apk x86_64 (para el emulador)
         run: |
           echo "PRUEBA = True" > ekkon/_prueba.py
+          # Solo para la prueba: genera el código de barras que se le da a leer al escáner
+          sed -i 's/^    "pillow",$/    "pillow",\n    "python-barcode",/' pyproject.toml
+          grep -n "python-barcode" pyproject.toml
           export FLET_ANDROID_SIGNING_KEY_STORE_PASSWORD="$(cat android/clave.txt)"
           export FLET_ANDROID_SIGNING_KEY_PASSWORD="$FLET_ANDROID_SIGNING_KEY_STORE_PASSWORD"
           flet build apk . --no-rich-output --skip-flutter-doctor --arch x86_64 \

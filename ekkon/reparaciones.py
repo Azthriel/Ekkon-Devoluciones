@@ -179,7 +179,8 @@ def clasificacion_final(r: dict) -> str | None:
 
 
 def cambios_para_devolucion(dev: dict, r: dict) -> dict:
-    """Qué hay que actualizar en la devolución vinculada: solo la nota y la clasificación."""
+    """Qué hay que actualizar en la devolución vinculada: la nota, la clasificación y, con la clasificación nueva,
+    el depósito final y la transferencia (ej. Service -> Nuevo: va a Podestá, "A la espera de movimiento")."""
     if not finalizada(r):
         return {}
     cambios: dict = {}
@@ -191,9 +192,30 @@ def cambios_para_devolucion(dev: dict, r: dict) -> dict:
         original = dev.get("clasificacion_original") or dev.get("clasificacion")
         cambios["clasificacion"] = nueva
         cambios["clasificacion_original"] = original
-        # El depósito final de la planilla no cambia: queda el que correspondía a la clasificación original
-        cambios["deposito_final"] = dev.get("deposito_final") or settings.DEPOSITO_FINAL.get(original or "", "")
+        cambios["clasificacion_anteriores"] = _sumar(dev.get("clasificacion_anteriores"), dev.get("clasificacion"))
+    # Con la clasificación nueva (también las que cambiaron con versiones anteriores, que no movían el depósito)
+    clasif = cambios.get("clasificacion") or (dev.get("clasificacion") if dev.get("clasificacion_original") else None)
+    if clasif:
+        anterior_dep = dev.get("deposito_final") or settings.DEPOSITO_FINAL.get(
+            dev.get("clasificacion_original") or dev.get("clasificacion") or "", "")
+        nuevo_dep = settings.DEPOSITO_FINAL.get(clasif, anterior_dep)
+        if nuevo_dep and nuevo_dep != anterior_dep:
+            cambios["deposito_final"] = nuevo_dep
+            cambios["deposito_final_anteriores"] = _sumar(dev.get("deposito_final_anteriores"), anterior_dep)
+            # Transferencia: solo si ya se hizo la NC (si no, se calcula al marcarla con la clasificación nueva)
+            anterior_tr = dev.get("transferencia") or ""
+            nueva_tr = settings.transferencia_al_hacer_nc(clasif)
+            if anterior_tr and dev.get("nc_realizada") and nueva_tr != anterior_tr:
+                cambios["transferencia"] = nueva_tr
+                cambios["transferencia_anteriores"] = _sumar(dev.get("transferencia_anteriores"), anterior_tr)
     return cambios
+
+
+def _sumar(lista, valor) -> list:
+    salida = list(lista or [])
+    if valor and valor not in salida:
+        salida.append(valor)
+    return salida
 
 
 # ---------------------------------------------------------------- planilla de reparaciones
