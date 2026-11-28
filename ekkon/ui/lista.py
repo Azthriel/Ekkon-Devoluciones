@@ -96,7 +96,11 @@ class VistaLista:
             # El botón va arriba a la derecha, junto al título, así no se sale de la pantalla
             from .sincronizar import sincronizar
             from .importar import importar_devoluciones
+            from .exportar import exportar_por_usuario
             encabezado = ft.Row([encabezado, ft.Row([
+                ft.OutlinedButton("Exportar .csv", icon=ft.Icons.FILE_DOWNLOAD_OUTLINED,
+                                  tooltip="Quién cargó cada devolución, entre dos fechas",
+                                  on_click=lambda _: exportar_por_usuario(self.app)),
                 ft.OutlinedButton("Importar de la planilla", icon=ft.Icons.DOWNLOAD,
                                   tooltip="Trae al programa las devoluciones que están solo en la planilla",
                                   on_click=lambda _: importar_devoluciones(self.app, self.recargar)),

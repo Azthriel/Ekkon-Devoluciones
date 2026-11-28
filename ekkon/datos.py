@@ -345,3 +345,46 @@ class ConfigApp:
 
     def guardar(self, campos: dict) -> dict:
         return self.fs.actualizar(DOC_CONFIG, campos, debe_existir=False)
+
+
+# ---------------------------------------------------------------- informe de quién cargó cada devolución
+
+def fecha_carga(d: dict) -> dt.date | None:
+    c = d.get("cargado_en")
+    if isinstance(c, dt.datetime):
+        return c.astimezone().date() if c.tzinfo else c.date()
+    return None
+
+
+def csv_por_usuario(devoluciones: list[dict], desde: dt.date, hasta: dt.date,
+                    nombres: dict[str, str] | None = None) -> tuple[str, dict[str, int]]:
+    """CSV (separado por ";", para Excel) con quién cargó cada devolución entre dos fechas, y el total por persona.
+
+    nombres: {email: nombre} de los usuarios del programa.
+    """
+    import csv
+    import io
+
+    nombres = {k.lower(): v for k, v in (nombres or {}).items()}
+    filas = []
+    for d in devoluciones:
+        f = fecha_carga(d)
+        if f is None or not (desde <= f <= hasta):
+            continue
+        email = (d.get("cargado_por") or "").strip()
+        quien = nombres.get(email.lower()) or (email.split("@")[0] if "@" in email else email) or "—"
+        filas.append((f, quien, d))
+    filas.sort(key=lambda x: (x[0], x[1]))
+    salida = io.StringIO()
+    w = csv.writer(salida, delimiter=";", lineterminator="\r\n")
+    w.writerow(["Fecha de carga", "Cargó", "Venta #", "Tipo", "Clasificación", "Condición", "Motivo", "SKU",
+                "Producto", "Estado"])
+    totales: dict[str, int] = {}
+    for f, quien, d in filas:
+        totales[quien] = totales.get(quien, 0) + 1
+        w.writerow([f.strftime("%d/%m/%Y"), quien, d.get("numero_venta", ""),
+                    "Cancelación" if d.get("tipo") == "cancelacion" else "Devolución",
+                    d.get("clasificacion", ""), d.get("condicion", ""), d.get("motivo", ""),
+                    d.get("codigo_producto", ""), d.get("producto", ""),
+                    settings.ESTADOS.get(d.get("estado", ""), d.get("estado", ""))])
+    return salida.getvalue(), dict(sorted(totales.items(), key=lambda x: -x[1]))

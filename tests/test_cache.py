@@ -52,3 +52,21 @@ def test_cache_lee_todo_una_vez_y_despues_solo_lo_que_cambio(tmp_path, monkeypat
     # Lo que actualiza este equipo queda en la caché sin releer
     devs2.actualizar("0", {"estado": "cobertura"})
     assert next(d for d in devs2.todas() if d["_id"] == "0")["estado"] == "cobertura"
+
+
+def test_csv_de_quien_cargo_cada_devolucion():
+    t = lambda d: dt.datetime(2026, 11, d, 15, tzinfo=dt.timezone.utc)   # noqa: E731
+    devs = [{"numero_venta": "1", "cargado_por": "alan@x.com", "cargado_en": t(3), "clasificacion": "N",
+             "estado": "sin_reclamo"},
+            {"numero_venta": "2", "cargado_por": "jose@x.com", "cargado_en": t(4), "tipo": "cancelacion"},
+            {"numero_venta": "3", "cargado_por": "alan@x.com", "cargado_en": t(5)},
+            {"numero_venta": "4", "cargado_por": "alan@x.com", "cargado_en": dt.datetime(2026, 10, 30, 15,
+                                                                                         tzinfo=dt.timezone.utc)},
+            {"numero_venta": "5", "cargado_por": "Planilla", "cargado_en": t(6)}]
+    texto, totales = D.csv_por_usuario(devs, dt.date(2026, 11, 1), dt.date(2026, 11, 30),
+                                       {"Alan@x.com": "Alan", "jose@x.com": "José"})
+    assert totales == {"Alan": 2, "José": 1, "Planilla": 1}
+    lineas = texto.strip().split("\r\n")
+    assert lineas[0].startswith("Fecha de carga;Cargó;Venta #") and len(lineas) == 5
+    assert lineas[1] == "03/11/2026;Alan;1;Devolución;N;;;;;Sin reclamo"
+    assert ";José;2;Cancelación;" in lineas[2]
